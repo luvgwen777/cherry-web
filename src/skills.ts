@@ -5,6 +5,7 @@ export interface Skill {
   triggers: string[]
   content: string
   enabled: boolean
+  category?: string
   createdAt: number
   updatedAt: number
 }
@@ -15,6 +16,7 @@ const DEFAULT_SKILLS: Skill[] = [
   {
     id: "xiaohongshu-writer",
     name: "小红书文案专家",
+    category: "writing",
     description: "生成小红书风格标题、正文、标签和种草文案。",
     triggers: ["小红书", "种草", "文案", "标题", "爆款"],
     content:
@@ -26,6 +28,7 @@ const DEFAULT_SKILLS: Skill[] = [
   {
     id: "code-reviewer",
     name: "代码审查助手",
+    category: "coding",
     description: "帮助检查代码问题、优化结构、指出潜在 bug。",
     triggers: ["代码审查", "review", "bug", "优化代码", "重构"],
     content:
@@ -37,6 +40,7 @@ const DEFAULT_SKILLS: Skill[] = [
   {
     id: "translator",
     name: "专业翻译助手",
+    category: "language",
     description: "中英互译、润色、调整语气。",
     triggers: ["翻译", "英文", "中文", "润色", "translate"],
     content:
@@ -55,6 +59,207 @@ function createId() {
   return `skill-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
+function cleanYamlValue(value: string) {
+  let result = value.trim()
+
+  if (
+    (result.startsWith('"') && result.endsWith('"')) ||
+    (result.startsWith("'") && result.endsWith("'"))
+  ) {
+    result = result.slice(1, -1)
+  }
+
+  return result.trim()
+}
+
+function parseSimpleYaml(frontMatter: string) {
+  const result: Record<string, string> = {}
+  const lines = frontMatter.split(/\r?\n/)
+
+  let currentKey = ""
+
+  for (const line of lines) {
+    if (!line.trim()) continue
+
+    const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/)
+
+    if (match) {
+      currentKey = match[1].trim()
+      result[currentKey] = cleanYamlValue(match[2] || "")
+      continue
+    }
+
+    if (currentKey && /^\s+/.test(line)) {
+      result[currentKey] = `${result[currentKey] || ""} ${line.trim()}`.trim()
+    }
+  }
+
+  return result
+}
+
+function extractFrontMatter(markdown: string) {
+  const normalized = markdown.replace(/\r\n/g, "\n")
+
+  if (!normalized.startsWith("---\n")) {
+    return {
+      frontMatter: {},
+      body: normalized.trim(),
+    }
+  }
+
+  const endIndex = normalized.indexOf("\n---", 4)
+
+  if (endIndex === -1) {
+    return {
+      frontMatter: {},
+      body: normalized.trim(),
+    }
+  }
+
+  const yamlText = normalized.slice(4, endIndex).trim()
+  const body = normalized.slice(endIndex + 4).trim()
+
+  return {
+    frontMatter: parseSimpleYaml(yamlText),
+    body,
+  }
+}
+
+function filenameToName(filename?: string) {
+  if (!filename) return "imported-skill"
+
+  return filename
+    .replace(/\.md$/i, "")
+    .replace(/\.markdown$/i, "")
+    .replace(/[_\s]+/g, "-")
+    .trim()
+}
+
+function splitKeywords(value: string) {
+  return value
+    .split(/[,，、\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function buildDefaultTriggers(name: string, category: string, description: string) {
+  const triggers = new Set<string>()
+
+  if (name) {
+    triggers.add(name)
+
+    name
+      .split(/[-_\s]+/)
+      .map((item) => item.trim())
+      .filter((item) => item.length >= 2)
+      .forEach((item) => triggers.add(item))
+  }
+
+  if (category) {
+    triggers.add(category)
+  }
+
+  const descWords = description
+    .split(/[,，。.\s]+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 4)
+    .slice(0, 5)
+
+  descWords.forEach((item) => triggers.add(item))
+
+  return Array.from(triggers).slice(0, 12)
+}
+
+export function parseSkillFromMarkdownText(markdown: string, filename?: string): Skill {
+  const { frontMatter, body } = extractFrontMatter(markdown)
+
+  const name = cleanYamlValue(
+    frontMatter.name ||
+      frontMatter.title ||
+      frontMatter.skill ||
+      filenameToName(filename),
+  )
+
+  const category = cleanYamlValue(frontMatter.category || frontMatter.group || "")
+
+  const description = cleanYamlValue(
+    frontMatter.description ||
+      frontMatter.desc ||
+      frontMatter.summary ||
+      "",
+  )
+
+  const frontMatterTriggers =
+    frontMatter.triggers ||
+    frontMatter.keywords ||
+    frontMatter.tags ||
+    frontMatter.trigger ||
+    ""
+
+  const triggers = frontMatterTriggers
+    ? splitKeywords(frontMatterTriggers)
+    : buildDefaultTriggers(name, category, description)
+
+  const content = body.trim()
+
+  if (!name) {
+    throw new Error("SKILL.md 缺少 name")
+  }
+
+  if (!content) {
+    throw new Error(`技能「${name}」没有正文内容`)
+  }
+
+  const now = Date.now()
+
+  return {
+    id: createId(),
+    name,
+    category,
+    description,
+    triggers,
+    content,
+    enabled: true,
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+export function importSkillMarkdownText(markdown: string, filename?: string) {
+  const skill = parseSkillFromMarkdownText(markdown, filename)
+
+  saveSkills([skill, ...getSkills()])
+
+  return skill
+}
+
+export function importSkillMarkdownTexts(
+  files: Array<{ text: string; filename?: string }>,
+) {
+  const importedSkills = files.map((file) =>
+    parseSkillFromMarkdownText(file.text, file.filename),
+  )
+
+  saveSkills([...importedSkills, ...getSkills()])
+
+  return importedSkills
+}
+
+export function exportSkillToMarkdown(skill: Skill) {
+  const frontMatter = [
+    "---",
+    `name: ${skill.name}`,
+    skill.category ? `category: ${skill.category}` : "",
+    skill.description ? `description: ${skill.description}` : "",
+    skill.triggers.length > 0 ? `triggers: ${skill.triggers.join(", ")}` : "",
+    "---",
+  ]
+    .filter(Boolean)
+    .join("\n")
+
+  return `${frontMatter}\n\n${skill.content}`
+}
+
 function safeParseSkills(raw: string | null): Skill[] | null {
   if (!raw) return null
 
@@ -69,6 +274,7 @@ function safeParseSkills(raw: string | null): Skill[] | null {
         id: String(item.id),
         name: String(item.name || ""),
         description: String(item.description || ""),
+        category: String(item.category || ""),
         triggers: Array.isArray(item.triggers)
           ? item.triggers.map(String).filter(Boolean)
           : [],
@@ -80,141 +286,6 @@ function safeParseSkills(raw: string | null): Skill[] | null {
   } catch {
     return null
   }
-}
-
-function toStringArray(value: any): string[] {
-  if (Array.isArray(value)) {
-    return value.map(String).map((item) => item.trim()).filter(Boolean)
-  }
-
-  if (typeof value === "string") {
-    return value
-      .split(/[,，\n]/)
-      .map((item) => item.trim())
-      .filter(Boolean)
-  }
-
-  return []
-}
-
-function pickContent(item: any) {
-  if (typeof item.content === "string") return item.content
-  if (typeof item.prompt === "string") return item.prompt
-  if (typeof item.systemPrompt === "string") return item.systemPrompt
-  if (typeof item.instruction === "string") return item.instruction
-  if (typeof item.instructions === "string") return item.instructions
-  if (typeof item.skill === "string") return item.skill
-  if (typeof item.markdown === "string") return item.markdown
-  if (typeof item.SKILL === "string") return item.SKILL
-  if (typeof item["SKILL.md"] === "string") return item["SKILL.md"]
-
-  return ""
-}
-
-function normalizeImportedSkill(item: any): Skill | null {
-  if (!item || typeof item !== "object") return null
-
-  const name = String(
-    item.name ||
-      item.title ||
-      item.displayName ||
-      item.skillName ||
-      item.id ||
-      "未命名技能",
-  ).trim()
-
-  const description = String(
-    item.description || item.desc || item.summary || "",
-  ).trim()
-
-  const triggers = toStringArray(
-    item.triggers ||
-      item.keywords ||
-      item.trigger ||
-      item.tags ||
-      item.examples ||
-      item.whenToUse,
-  )
-
-  const content = pickContent(item).trim()
-
-  if (!name || !content) return null
-
-  const now = Date.now()
-
-  return {
-    id: createId(),
-    name,
-    description,
-    triggers,
-    content,
-    enabled: item.enabled === undefined ? true : Boolean(item.enabled),
-    createdAt: now,
-    updatedAt: now,
-  }
-}
-
-export function parseImportedSkillsFromJsonText(jsonText: string): Skill[] {
-  let parsed: any
-
-  try {
-    parsed = JSON.parse(jsonText)
-  } catch {
-    throw new Error("JSON 格式错误，无法解析。")
-  }
-
-  let rawSkills: any[] = []
-
-  if (Array.isArray(parsed)) {
-    rawSkills = parsed
-  } else if (Array.isArray(parsed.skills)) {
-    rawSkills = parsed.skills
-  } else if (Array.isArray(parsed.data)) {
-    rawSkills = parsed.data
-  } else if (parsed.skill && typeof parsed.skill === "object") {
-    rawSkills = [parsed.skill]
-  } else if (parsed.name || parsed.title || parsed.content || parsed.prompt) {
-    rawSkills = [parsed]
-  } else {
-    throw new Error("没有识别到技能数据。支持单个技能、技能数组或 { skills: [...] } 格式。")
-  }
-
-  const skills = rawSkills
-    .map((item) => normalizeImportedSkill(item))
-    .filter(Boolean) as Skill[]
-
-  if (skills.length === 0) {
-    throw new Error("没有找到有效技能。技能至少需要 name 和 content。")
-  }
-
-  return skills
-}
-
-export function importSkillsFromJsonText(jsonText: string, mode: "merge" | "replace" = "merge") {
-  const importedSkills = parseImportedSkillsFromJsonText(jsonText)
-
-  if (mode === "replace") {
-    saveSkills(importedSkills)
-    return importedSkills
-  }
-
-  const currentSkills = getSkills()
-  const nextSkills = [...importedSkills, ...currentSkills]
-
-  saveSkills(nextSkills)
-
-  return importedSkills
-}
-
-export function exportSkillsToJsonText() {
-  const data = {
-    type: "cherry-web-skills",
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    skills: getSkills(),
-  }
-
-  return JSON.stringify(data, null, 2)
 }
 
 export function getSkills(): Skill[] {
@@ -296,6 +367,7 @@ export function buildSkillSystemPromptFromText(text: string) {
     .map((skill, index) => {
       return [
         `## 技能 ${index + 1}：${skill.name}`,
+        skill.category ? `分类：${skill.category}` : "",
         skill.description ? `描述：${skill.description}` : "",
         "技能内容：",
         skill.content,

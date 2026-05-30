@@ -1,888 +1,769 @@
-import { useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import {
-  Bot,
-  Database,
-  Eye,
-  Info,
+  Download,
+  FileText,
+  FolderOpen,
   Plus,
   RotateCcw,
-  Server,
-  Settings,
-  SlidersHorizontal,
+  Search,
+  Sparkles,
   Trash2,
+  Upload,
   X,
 } from "lucide-react"
 import { Button } from "./Button"
 import {
-  addModelOption,
-  addProviderOption,
-  getContextCount,
-  getCurrentProviderId,
-  getEnableReasoning,
-  getMaxTokens,
-  getModel,
-  getModelOptions,
-  getProviderOptions,
-  getShowReasoning,
-  getStreamOutput,
-  getTemperature,
-  getTopP,
-  removeModelOption,
-  removeProviderOption,
-  resetSettings,
-  saveModelOptions,
-  saveProviderOptions,
-  setContextCount,
-  setCurrentModel,
-  setCurrentProviderId,
-  setEnableReasoning,
-  setMaxTokens,
-  setShowReasoning,
-  setStreamOutput,
-  setTemperature,
-  setTopP,
-  type ModelOption,
-  type ProviderOption,
-} from "../settings"
+  addSkill,
+  exportSkillToMarkdown,
+  getSkills,
+  importSkillMarkdownText,
+  importSkillMarkdownTexts,
+  removeSkill,
+  resetSkills,
+  saveSkills,
+  type Skill,
+} from "../skills"
 
 interface Props {
   open: boolean
   onClose: () => void
 }
 
-type SettingsTab = "provider" | "model" | "general" | "display" | "data" | "about"
+function parseTriggers(value: string) {
+  return value
+    .split(/[,，\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
 
-function RowSwitch({
-  title,
-  description,
-  checked,
-  onChange,
-}: {
-  title: string
-  description?: string
-  checked: boolean
-  onChange: (value: boolean) => void
-}) {
+function triggersToText(triggers: string[]) {
+  return triggers.join("，")
+}
+
+function createEmptySkill(): Skill {
+  const now = Date.now()
+
+  return {
+    id: "",
+    name: "",
+    description: "",
+    category: "",
+    triggers: [],
+    content: "",
+    enabled: true,
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+
+    reader.onload = () => resolve(String(reader.result || ""))
+    reader.onerror = () => reject(new Error("读取文件失败"))
+
+    reader.readAsText(file)
+  })
+}
+
+function downloadTextFile(filename: string, text: string) {
+  const blob = new Blob([text], {
+    type: "text/markdown;charset=utf-8",
+  })
+
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+
+  link.href = url
+  link.download = filename
+  link.click()
+
+  URL.revokeObjectURL(url)
+}
+
+function safeFilename(value: string) {
   return (
-    <div className="flex items-center justify-between border-b border-[var(--color-border)] py-4">
-      <div className="pr-4">
-        <div className="text-sm font-medium">{title}</div>
-        {description && (
-          <div className="mt-1 text-xs text-[var(--color-foreground-muted)]">
-            {description}
-          </div>
-        )}
-      </div>
-
-      <button
-        type="button"
-        onClick={() => onChange(!checked)}
-        className={[
-          "relative h-6 w-11 rounded-full transition-colors",
-          checked ? "bg-emerald-500" : "bg-neutral-400/40",
-        ].join(" ")}
-      >
-        <span
-          className={[
-            "absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform",
-            checked ? "translate-x-5" : "translate-x-0.5",
-          ].join(" ")}
-        />
-      </button>
-    </div>
+    value
+      .trim()
+      .replace(/[\\/:*?"<>|]/g, "-")
+      .replace(/\s+/g, "-") || "SKILL"
   )
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-}: {
-  label: string
-  value: string | number
-  onChange: (value: string) => void
-  placeholder?: string
-  type?: string
-}) {
-  return (
-    <label className="block border-b border-[var(--color-border)] py-4">
-      <div className="mb-2 text-sm font-medium">{label}</div>
-      <input
-        type={type}
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
-      />
-    </label>
+export function SkillsPanel({ open, onClose }: Props) {
+  const mdFileInputRef = useRef<HTMLInputElement | null>(null)
+
+  const [skills, setSkills] = useState<Skill[]>(getSkills())
+  const [selectedId, setSelectedId] = useState(skills[0]?.id || "")
+  const [search, setSearch] = useState("")
+  const [draft, setDraft] = useState<Skill>(
+    skills[0] ? { ...skills[0] } : createEmptySkill(),
   )
-}
 
-function getProviderName(providerId: string, providers: ProviderOption[]) {
-  return providers.find((item) => item.id === providerId)?.name || "未知服务商"
-}
+  const [importOpen, setImportOpen] = useState(false)
+  const [importText, setImportText] = useState("")
 
-export function SettingsPanel({ open, onClose }: Props) {
-  const [tab, setTab] = useState<SettingsTab>("provider")
+  const filteredSkills = useMemo(() => {
+    const keyword = search.trim().toLowerCase()
 
-  const [providers, setProviders] = useState<ProviderOption[]>(
-    getProviderOptions(),
-  )
-  const [models, setModels] = useState<ModelOption[]>(getModelOptions())
+    if (!keyword) return skills
 
-  const [currentProviderId, setCurrentProviderIdState] =
-    useState(getCurrentProviderId())
-  const [modelValue, setModelValue] = useState(getModel())
-
-  const [newProviderName, setNewProviderName] = useState("")
-  const [newProviderBaseUrl, setNewProviderBaseUrl] = useState("")
-  const [newProviderApiKey, setNewProviderApiKey] = useState("")
-
-  const [newModelName, setNewModelName] = useState("")
-  const [newModelId, setNewModelId] = useState("")
-  const [newModelProviderId, setNewModelProviderId] =
-    useState(getCurrentProviderId())
-  const [newModelVision, setNewModelVision] = useState(false)
-  const [newModelReasoning, setNewModelReasoning] = useState(false)
-
-  const [temperatureValue, setTemperatureValue] = useState(getTemperature())
-  const [topPValue, setTopPValue] = useState(getTopP())
-  const [maxTokensValue, setMaxTokensValue] = useState(getMaxTokens())
-  const [contextCountValue, setContextCountValue] = useState(getContextCount())
-
-  const [streamValue, setStreamValue] = useState(getStreamOutput())
-  const [enableReasoningValue, setEnableReasoningValue] = useState(
-    getEnableReasoning(),
-  )
-  const [showReasoningValue, setShowReasoningValue] = useState(
-    getShowReasoning(),
-  )
+    return skills.filter((skill) => {
+      return (
+        skill.name.toLowerCase().includes(keyword) ||
+        skill.description.toLowerCase().includes(keyword) ||
+        String(skill.category || "").toLowerCase().includes(keyword) ||
+        skill.triggers.join(" ").toLowerCase().includes(keyword)
+      )
+    })
+  }, [skills, search])
 
   if (!open) return null
 
-  function refreshProviderAndModels() {
-    setProviders(getProviderOptions())
-    setModels(getModelOptions())
+  function selectSkill(skill: Skill) {
+    setSelectedId(skill.id)
+    setDraft({ ...skill })
   }
 
-  function save() {
-    saveProviderOptions(
-      providers.map((provider) => ({
-        ...provider,
-        name: provider.name.trim(),
-        baseUrl: provider.baseUrl.trim().replace(/\/$/, ""),
-        apiKey: provider.apiKey.trim(),
-      })),
-    )
+  function refresh(nextSkills = getSkills()) {
+    setSkills(nextSkills)
 
-    saveModelOptions(
-      models.map((model) => ({
-        ...model,
-        name: model.name.trim(),
-        model: model.model.trim(),
-      })),
-    )
-
-    setCurrentProviderId(currentProviderId)
-
-    const selectedModel = models.find((model) => model.model === modelValue)
-
-    if (selectedModel) {
-      setCurrentModel(selectedModel.providerId, selectedModel.model)
-    } else if (models[0]) {
-      setCurrentModel(models[0].providerId, models[0].model)
+    if (nextSkills.length === 0) {
+      setDraft(createEmptySkill())
+      setSelectedId("")
+      return
     }
 
-    setTemperature(Number(temperatureValue))
-    setTopP(Number(topPValue))
-    setMaxTokens(Number(maxTokensValue))
-    setContextCount(Number(contextCountValue))
+    if (draft.id) {
+      const latest = nextSkills.find((item) => item.id === draft.id)
 
-    setStreamOutput(streamValue)
-    setEnableReasoning(enableReasoningValue)
-    setShowReasoning(showReasoningValue)
+      if (latest) {
+        setDraft({ ...latest })
+        setSelectedId(latest.id)
+        return
+      }
+    }
 
-    onClose()
+    setDraft({ ...nextSkills[0] })
+    setSelectedId(nextSkills[0].id)
   }
 
-  function resetAll() {
-    const confirmed = window.confirm("确定要重置所有设置吗？")
+  function createSkill() {
+    const newSkill = addSkill({
+      name: "新技能",
+      category: "custom",
+      description: "请填写这个技能的用途。",
+      triggers: ["新技能"],
+      content:
+        "请在这里填写技能指令，例如：你是一个专业助手，请按照以下规则完成任务……",
+      enabled: true,
+    })
+
+    const nextSkills = getSkills()
+
+    setSkills(nextSkills)
+    setSelectedId(newSkill.id)
+    setDraft({ ...newSkill })
+  }
+
+  function saveCurrentSkill() {
+    const name = draft.name.trim()
+    const content = draft.content.trim()
+
+    if (!name) {
+      alert("请填写技能名称")
+      return
+    }
+
+    if (!content) {
+      alert("请填写技能内容")
+      return
+    }
+
+    if (!draft.id) {
+      addSkill({
+        name,
+        category: draft.category?.trim() || "",
+        description: draft.description.trim(),
+        triggers: draft.triggers,
+        content,
+        enabled: draft.enabled,
+      })
+
+      refresh()
+      return
+    }
+
+    const nextSkills = skills.map((skill) =>
+      skill.id === draft.id
+        ? {
+            ...draft,
+            name,
+            category: draft.category?.trim() || "",
+            description: draft.description.trim(),
+            content,
+            updatedAt: Date.now(),
+          }
+        : skill,
+    )
+
+    saveSkills(nextSkills)
+    refresh(nextSkills)
+  }
+
+  function deleteCurrentSkill() {
+    if (!draft.id) return
+
+    const confirmed = window.confirm(`确定删除技能「${draft.name}」吗？`)
 
     if (!confirmed) return
 
-    resetSettings()
-    location.reload()
+    removeSkill(draft.id)
+    refresh()
   }
 
-  function addProvider() {
-    if (!newProviderName.trim()) {
-      alert("请填写服务商名称")
-      return
-    }
-
-    if (!newProviderBaseUrl.trim()) {
-      alert("请填写 Base URL")
-      return
-    }
-
-    addProviderOption(newProviderName, newProviderBaseUrl, newProviderApiKey)
-
-    setNewProviderName("")
-    setNewProviderBaseUrl("")
-    setNewProviderApiKey("")
-
-    refreshProviderAndModels()
-  }
-
-  function updateProvider(id: string, patch: Partial<ProviderOption>) {
-    setProviders((current) =>
-      current.map((provider) =>
-        provider.id === id
-          ? {
-              ...provider,
-              ...patch,
-            }
-          : provider,
-      ),
+  function toggleSkill(skill: Skill) {
+    const nextSkills = skills.map((item) =>
+      item.id === skill.id
+        ? {
+            ...item,
+            enabled: !item.enabled,
+            updatedAt: Date.now(),
+          }
+        : item,
     )
+
+    saveSkills(nextSkills)
+    refresh(nextSkills)
   }
 
-  function deleteProvider(id: string) {
-    if (providers.length <= 1) {
-      alert("至少保留一个服务商")
-      return
-    }
-
-    const provider = providers.find((item) => item.id === id)
+  function resetAllSkills() {
     const confirmed = window.confirm(
-      `确定删除服务商「${provider?.name || "未知"}」吗？它下面的模型也会删除。`,
+      "确定恢复默认技能吗？这会删除你自己添加的技能。",
     )
 
     if (!confirmed) return
 
-    removeProviderOption(id)
-    refreshProviderAndModels()
+    resetSkills()
+    refresh(getSkills())
+  }
 
-    const nextProviders = getProviderOptions()
+  async function handleMdFiles(files: FileList | null) {
+    if (!files || files.length === 0) return
 
-    if (currentProviderId === id && nextProviders[0]) {
-      setCurrentProviderIdState(nextProviders[0].id)
+    try {
+      const markdownFiles = Array.from(files).filter((file) => {
+        const lowerName = file.name.toLowerCase()
+
+        return (
+          lowerName.endsWith(".md") ||
+          lowerName.endsWith(".markdown") ||
+          file.type === "text/markdown" ||
+          file.type === "text/plain"
+        )
+      })
+
+      if (markdownFiles.length === 0) {
+        alert("请选择 .md 或 .markdown 文件")
+        return
+      }
+
+      const fileTexts = await Promise.all(
+        markdownFiles.map(async (file) => ({
+          filename: file.name,
+          text: await readFileAsText(file),
+        })),
+      )
+
+      const importedSkills = importSkillMarkdownTexts(fileTexts)
+
+      setImportOpen(false)
+      setImportText("")
+      refresh(getSkills())
+
+      alert(`导入成功：${importedSkills.length} 个技能`)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "导入失败")
+    } finally {
+      if (mdFileInputRef.current) {
+        mdFileInputRef.current.value = ""
+      }
     }
   }
 
-  function addModel() {
-    if (!newModelName.trim()) {
-      alert("请填写模型显示名称")
+  function handlePasteImport() {
+    if (!importText.trim()) {
+      alert("请先粘贴 SKILL.md 内容")
       return
     }
 
-    if (!newModelId.trim()) {
-      alert("请填写模型 ID")
-      return
+    try {
+      const importedSkill = importSkillMarkdownText(importText, "SKILL.md")
+
+      setImportOpen(false)
+      setImportText("")
+      refresh(getSkills())
+
+      alert(`导入成功：${importedSkill.name}`)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "导入失败")
     }
-
-    if (!newModelProviderId) {
-      alert("请选择服务商")
-      return
-    }
-
-    addModelOption(
-      newModelName,
-      newModelId,
-      newModelProviderId,
-      newModelVision,
-      newModelReasoning,
-    )
-
-    setNewModelName("")
-    setNewModelId("")
-    setNewModelVision(false)
-    setNewModelReasoning(false)
-
-    refreshProviderAndModels()
   }
 
-  function updateModel(id: string, patch: Partial<ModelOption>) {
-    setModels((current) =>
-      current.map((model) =>
-        model.id === id
-          ? {
-              ...model,
-              ...patch,
-            }
-          : model,
-      ),
-    )
-  }
-
-  function deleteModel(id: string) {
-    if (models.length <= 1) {
-      alert("至少保留一个模型")
+  function handleExportCurrent() {
+    if (!draft.id) {
+      alert("请先选择一个技能")
       return
     }
 
-    const model = models.find((item) => item.id === id)
-    const confirmed = window.confirm(`确定删除模型「${model?.name || "未知"}」吗？`)
-
-    if (!confirmed) return
-
-    removeModelOption(id)
-    refreshProviderAndModels()
+    const markdown = exportSkillToMarkdown(draft)
+    downloadTextFile(`${safeFilename(draft.name)}.md`, markdown)
   }
 
-  const menu = [
-    {
-      id: "provider" as const,
-      label: "API 服务商",
-      icon: Server,
-    },
-    {
-      id: "model" as const,
-      label: "模型设置",
-      icon: Bot,
-    },
-    {
-      id: "general" as const,
-      label: "常规设置",
-      icon: SlidersHorizontal,
-    },
-    {
-      id: "display" as const,
-      label: "显示设置",
-      icon: Eye,
-    },
-    {
-      id: "data" as const,
-      label: "数据设置",
-      icon: Database,
-    },
-    {
-      id: "about" as const,
-      label: "关于我们",
-      icon: Info,
-    },
-  ]
+  const hasSkills = skills.length > 0
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50">
       <div className="absolute inset-x-0 bottom-0 top-10 flex overflow-hidden rounded-t-3xl bg-[var(--color-background)] text-[var(--color-foreground)] shadow-[var(--shadow-xl)] md:inset-8 md:rounded-3xl">
-        <aside className="hidden w-56 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-sidebar)] p-3 md:block">
-          <div className="mb-3 flex h-9 items-center px-3 text-sm font-semibold">
-            设置
+        <aside className="hidden w-72 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-sidebar)] p-3 md:flex md:flex-col">
+          <div className="mb-3 flex h-9 items-center justify-between px-2">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <Sparkles size={17} />
+              技能
+            </div>
+
+            <Button variant="ghost" size="icon-sm" onClick={createSkill}>
+              <Plus size={17} />
+            </Button>
           </div>
 
-          <div className="space-y-1">
-            {menu.map((item) => {
-              const Icon = item.icon
-
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setTab(item.id)}
-                  className={[
-                    "flex h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-sm transition-colors",
-                    tab === item.id
-                      ? "bg-[var(--color-secondary)] text-[var(--color-foreground)]"
-                      : "text-[var(--color-foreground-secondary)] hover:bg-[var(--color-accent)]",
-                  ].join(" ")}
-                >
-                  <Icon size={17} />
-                  {item.label}
-                </button>
-              )
-            })}
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3">
+            <Search
+              size={15}
+              className="text-[var(--color-foreground-muted)]"
+            />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="发现更多技能..."
+              className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[var(--color-foreground-muted)]"
+            />
           </div>
+
+          <div className="mb-3 grid grid-cols-2 gap-2">
+            <Button
+              variant="outline"
+              className="justify-center"
+              onClick={() => setImportOpen(true)}
+            >
+              <Upload size={15} />
+              导入
+            </Button>
+
+            <Button
+              variant="outline"
+              className="justify-center"
+              onClick={handleExportCurrent}
+            >
+              <Download size={15} />
+              导出
+            </Button>
+          </div>
+
+          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+            {filteredSkills.map((skill) => (
+              <button
+                key={skill.id}
+                type="button"
+                onClick={() => selectSkill(skill)}
+                className={[
+                  "w-full rounded-xl px-3 py-2 text-left transition-colors",
+                  selectedId === skill.id
+                    ? "bg-[var(--color-secondary)] text-[var(--color-foreground)]"
+                    : "text-[var(--color-foreground-secondary)] hover:bg-[var(--color-accent)]",
+                ].join(" ")}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0 truncate text-sm font-medium">
+                    {skill.name}
+                  </div>
+
+                  <span
+                    className={[
+                      "shrink-0 rounded-full px-2 py-0.5 text-[10px]",
+                      skill.enabled
+                        ? "bg-emerald-500 text-white"
+                        : "bg-neutral-500/30 text-[var(--color-foreground-muted)]",
+                    ].join(" ")}
+                  >
+                    {skill.enabled ? "启用" : "关闭"}
+                  </span>
+                </div>
+
+                <div className="mt-1 truncate text-xs text-[var(--color-foreground-muted)]">
+                  {skill.category || "未分类"}
+                </div>
+
+                <div className="mt-1 line-clamp-2 text-xs text-[var(--color-foreground-muted)]">
+                  {skill.description || "暂无描述"}
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <Button
+            variant="outline"
+            className="mt-3 justify-start"
+            onClick={resetAllSkills}
+          >
+            <RotateCcw size={15} />
+            恢复默认技能
+          </Button>
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-12 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-4">
             <div className="flex items-center gap-2 text-sm font-semibold">
-              <Settings size={17} />
-              {menu.find((item) => item.id === tab)?.label}
+              <Sparkles size={17} />
+              技能库
             </div>
 
-            <Button variant="ghost" size="icon-sm" onClick={onClose}>
-              <X size={18} />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                className="hidden md:flex"
+                onClick={() => setImportOpen(true)}
+              >
+                <Upload size={15} />
+                从 SKILL.md 安装
+              </Button>
+
+              <Button
+                variant="outline"
+                className="hidden md:flex"
+                onClick={handleExportCurrent}
+              >
+                <Download size={15} />
+                导出 MD
+              </Button>
+
+              <Button className="md:hidden" onClick={createSkill}>
+                <Plus size={15} />
+                新建
+              </Button>
+
+              <Button variant="ghost" size="icon-sm" onClick={onClose}>
+                <X size={18} />
+              </Button>
+            </div>
           </header>
 
           <div className="flex gap-2 overflow-x-auto border-b border-[var(--color-border)] px-3 py-2 md:hidden">
-            {menu.map((item) => (
+            <button
+              type="button"
+              onClick={() => setImportOpen(true)}
+              className="shrink-0 rounded-xl bg-[var(--color-secondary)] px-3 py-2 text-sm"
+            >
+              导入 MD
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportCurrent}
+              className="shrink-0 rounded-xl bg-[var(--color-secondary)] px-3 py-2 text-sm"
+            >
+              导出
+            </button>
+
+            {skills.map((skill) => (
               <button
-                key={item.id}
+                key={skill.id}
                 type="button"
-                onClick={() => setTab(item.id)}
+                onClick={() => selectSkill(skill)}
                 className={[
                   "shrink-0 rounded-xl px-3 py-2 text-sm",
-                  tab === item.id
+                  selectedId === skill.id
                     ? "bg-[var(--color-secondary)]"
                     : "text-[var(--color-foreground-muted)]",
                 ].join(" ")}
               >
-                {item.label}
+                {skill.name}
               </button>
             ))}
           </div>
 
           <section className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
-            {tab === "provider" && (
-              <div className="mx-auto max-w-3xl">
-                <div className="mb-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
-                  <div className="text-sm font-semibold">API 服务商</div>
-                  <p className="mt-2 text-sm text-[var(--color-foreground-muted)]">
-                    每个服务商有自己的 API Key 和 Base URL。模型会绑定到某个服务商。
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  {providers.map((provider) => (
-                    <div
-                      key={provider.id}
-                      className={[
-                        "rounded-2xl border bg-[var(--color-card)] p-4",
-                        currentProviderId === provider.id
-                          ? "border-[var(--color-ring)]"
-                          : "border-[var(--color-border)]",
-                      ].join(" ")}
-                    >
-                      <div className="mb-3 flex items-center justify-between gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setCurrentProviderIdState(provider.id)}
-                          className="min-w-0 text-left"
-                        >
-                          <div className="truncate text-sm font-semibold">
-                            {provider.name}
-                          </div>
-                          <div className="truncate text-xs text-[var(--color-foreground-muted)]">
-                            {provider.baseUrl}
-                          </div>
-                        </button>
-
-                        <div className="flex items-center gap-2">
-                          {currentProviderId === provider.id && (
-                            <span className="rounded-full bg-emerald-500 px-2 py-1 text-xs text-white">
-                              当前
-                            </span>
-                          )}
-
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => deleteProvider(provider.id)}
-                            className="text-[var(--color-foreground-muted)] hover:text-[var(--color-destructive)]"
-                          >
-                            <Trash2 size={15} />
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="grid gap-3">
-                        <label className="block">
-                          <div className="mb-1 text-xs text-[var(--color-foreground-muted)]">
-                            服务商名称
-                          </div>
-                          <input
-                            value={provider.name}
-                            onChange={(event) =>
-                              updateProvider(provider.id, {
-                                name: event.target.value,
-                              })
-                            }
-                            className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
-                          />
-                        </label>
-
-                        <label className="block">
-                          <div className="mb-1 text-xs text-[var(--color-foreground-muted)]">
-                            Base URL
-                          </div>
-                          <input
-                            value={provider.baseUrl}
-                            onChange={(event) =>
-                              updateProvider(provider.id, {
-                                baseUrl: event.target.value,
-                              })
-                            }
-                            placeholder="https://api.openai.com/v1"
-                            className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
-                          />
-                        </label>
-
-                        <label className="block">
-                          <div className="mb-1 text-xs text-[var(--color-foreground-muted)]">
-                            API Key
-                          </div>
-                          <input
-                            value={provider.apiKey}
-                            onChange={(event) =>
-                              updateProvider(provider.id, {
-                                apiKey: event.target.value,
-                              })
-                            }
-                            placeholder="sk-..."
-                            className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
-                          />
-                        </label>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-6 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
-                  <div className="mb-3 text-sm font-semibold">添加服务商</div>
-
-                  <div className="grid gap-3">
-                    <input
-                      value={newProviderName}
-                      onChange={(event) => setNewProviderName(event.target.value)}
-                      placeholder="服务商名称，例如 SiliconFlow"
-                      className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
-                    />
-
-                    <input
-                      value={newProviderBaseUrl}
-                      onChange={(event) =>
-                        setNewProviderBaseUrl(event.target.value)
-                      }
-                      placeholder="Base URL，例如 https://api.siliconflow.cn/v1"
-                      className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
-                    />
-
-                    <input
-                      value={newProviderApiKey}
-                      onChange={(event) =>
-                        setNewProviderApiKey(event.target.value)
-                      }
-                      placeholder="API Key"
-                      className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
-                    />
+            {!hasSkills ? (
+              <div className="flex min-h-[70vh] items-center justify-center">
+                <div className="mx-auto max-w-md text-center">
+                  <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl border border-[var(--color-border)] text-[var(--color-foreground-muted)]">
+                    <Sparkles size={30} />
                   </div>
 
-                  <Button className="mt-3" onClick={addProvider}>
-                    <Plus size={16} />
-                    添加服务商
-                  </Button>
+                  <div className="text-lg font-semibold">未选择技能</div>
+
+                  <p className="mt-3 text-sm leading-6 text-[var(--color-foreground-muted)]">
+                    通过 SKILL.md 文件安装，或粘贴别人分享的 SKILL.md 内容来扩展 Agent 的能力。
+                  </p>
+
+                  <div className="mt-6 flex justify-center gap-3">
+                    <Button onClick={() => setImportOpen(true)}>
+                      <Upload size={16} />
+                      从 SKILL.md 安装
+                    </Button>
+
+                    <Button variant="outline" onClick={createSkill}>
+                      <Plus size={16} />
+                      新建技能
+                    </Button>
+                  </div>
                 </div>
               </div>
-            )}
-
-            {tab === "model" && (
-              <div className="mx-auto max-w-3xl">
-                <div className="mb-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
-                  <div className="text-sm font-semibold">模型设置</div>
+            ) : (
+              <div className="mx-auto max-w-4xl space-y-4">
+                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
+                  <div className="text-sm font-semibold">技能说明</div>
                   <p className="mt-2 text-sm text-[var(--color-foreground-muted)]">
-                    每个模型必须绑定一个 API 服务商。发送消息时会自动使用模型对应的服务商。
+                    技能会根据用户消息中的触发关键词自动启用，并把技能内容作为隐藏指令发送给 AI。
                   </p>
                 </div>
 
-                <div className="border-b border-[var(--color-border)] py-4">
-                  <div className="mb-2 text-sm font-medium">当前默认模型</div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="block">
+                    <div className="mb-2 text-sm font-medium">技能名称</div>
+                    <input
+                      value={draft.name}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          name: event.target.value,
+                        }))
+                      }
+                      placeholder="例如：content-research-writer"
+                      className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                    />
+                  </label>
 
-                  <select
-                    value={modelValue}
-                    onChange={(event) => setModelValue(event.target.value)}
+                  <label className="block">
+                    <div className="mb-2 text-sm font-medium">分类 category</div>
+                    <input
+                      value={draft.category || ""}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          category: event.target.value,
+                        }))
+                      }
+                      placeholder="business-productivity"
+                      className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                    />
+                  </label>
+                </div>
+
+                <label className="block">
+                  <div className="mb-2 text-sm font-medium">描述 description</div>
+                  <textarea
+                    value={draft.description}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        description: event.target.value,
+                      }))
+                    }
+                    placeholder="这个技能适合什么时候使用？"
+                    rows={3}
+                    className="w-full resize-none rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 py-2 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                  />
+                </label>
+
+                <label className="block">
+                  <div className="mb-2 text-sm font-medium">触发关键词</div>
+                  <input
+                    value={triggersToText(draft.triggers)}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        triggers: parseTriggers(event.target.value),
+                      }))
+                    }
+                    placeholder="content-research-writer，business-productivity，writing"
                     className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
-                  >
-                    {models.map((model) => (
-                      <option key={model.id} value={model.model}>
-                        {model.name} · {getProviderName(model.providerId, providers)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  />
+                </label>
 
-                <div className="border-b border-[var(--color-border)] py-4">
-                  <div className="mb-3 text-sm font-medium">模型列表</div>
-
-                  <div className="space-y-3">
-                    {models.map((model) => (
-                      <div
-                        key={model.id}
-                        className={[
-                          "rounded-2xl border bg-[var(--color-card)] p-4",
-                          model.model === modelValue
-                            ? "border-[var(--color-ring)]"
-                            : "border-[var(--color-border)]",
-                        ].join(" ")}
-                      >
-                        <div className="mb-3 flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-semibold">
-                              {model.name}
-                            </div>
-                            <div className="truncate text-xs text-[var(--color-foreground-muted)]">
-                              {model.model} ·{" "}
-                              {getProviderName(model.providerId, providers)}
-                            </div>
-                          </div>
-
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => deleteModel(model.id)}
-                            className="text-[var(--color-foreground-muted)] hover:text-[var(--color-destructive)]"
-                          >
-                            <Trash2 size={15} />
-                          </Button>
-                        </div>
-
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <input
-                            value={model.name}
-                            onChange={(event) =>
-                              updateModel(model.id, {
-                                name: event.target.value,
-                              })
-                            }
-                            placeholder="显示名称"
-                            className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
-                          />
-
-                          <input
-                            value={model.model}
-                            onChange={(event) =>
-                              updateModel(model.id, {
-                                model: event.target.value,
-                              })
-                            }
-                            placeholder="模型 ID"
-                            className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
-                          />
-
-                          <select
-                            value={model.providerId}
-                            onChange={(event) =>
-                              updateModel(model.id, {
-                                providerId: event.target.value,
-                              })
-                            }
-                            className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
-                          >
-                            {providers.map((provider) => (
-                              <option key={provider.id} value={provider.id}>
-                                {provider.name}
-                              </option>
-                            ))}
-                          </select>
-
-                          <div className="flex items-center gap-3">
-                            <label className="flex items-center gap-2 text-sm">
-                              <input
-                                type="checkbox"
-                                checked={Boolean(model.vision)}
-                                onChange={(event) =>
-                                  updateModel(model.id, {
-                                    vision: event.target.checked,
-                                  })
-                                }
-                              />
-                              图片
-                            </label>
-
-                            <label className="flex items-center gap-2 text-sm">
-                              <input
-                                type="checkbox"
-                                checked={Boolean(model.reasoning)}
-                                onChange={(event) =>
-                                  updateModel(model.id, {
-                                    reasoning: event.target.checked,
-                                  })
-                                }
-                              />
-                              思考
-                            </label>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                <label className="block">
+                  <div className="mb-2 text-sm font-medium">
+                    技能内容 / SKILL.md 正文
                   </div>
-                </div>
+                  <textarea
+                    value={draft.content}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        content: event.target.value,
+                      }))
+                    }
+                    placeholder="# Content Research Writer..."
+                    rows={16}
+                    className="w-full resize-y rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 py-2 font-mono text-sm leading-6 outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                  />
+                </label>
 
-                <div className="border-b border-[var(--color-border)] py-4">
-                  <div className="mb-3 text-sm font-medium">添加模型</div>
-
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <input
-                      value={newModelName}
-                      onChange={(event) => setNewModelName(event.target.value)}
-                      placeholder="显示名称，例如 Qwen Max"
-                      className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
-                    />
-
-                    <input
-                      value={newModelId}
-                      onChange={(event) => setNewModelId(event.target.value)}
-                      placeholder="模型 ID，例如 qwen-max"
-                      className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
-                    />
-
-                    <select
-                      value={newModelProviderId}
-                      onChange={(event) =>
-                        setNewModelProviderId(event.target.value)
-                      }
-                      className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
-                    >
-                      {providers.map((provider) => (
-                        <option key={provider.id} value={provider.id}>
-                          {provider.name}
-                        </option>
-                      ))}
-                    </select>
-
-                    <div className="flex items-center gap-3">
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={newModelVision}
-                          onChange={(event) =>
-                            setNewModelVision(event.target.checked)
-                          }
-                        />
-                        支持图片
-                      </label>
-
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={newModelReasoning}
-                          onChange={(event) =>
-                            setNewModelReasoning(event.target.checked)
-                          }
-                        />
-                        支持思考
-                      </label>
+                <div className="flex items-center justify-between rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
+                  <div>
+                    <div className="text-sm font-medium">启用技能</div>
+                    <div className="mt-1 text-xs text-[var(--color-foreground-muted)]">
+                      关闭后不会自动匹配这个技能。
                     </div>
                   </div>
 
-                  <Button className="mt-3" onClick={addModel}>
-                    <Plus size={16} />
-                    添加模型
-                  </Button>
-                </div>
-
-                <Field
-                  label="模型温度 temperature"
-                  value={temperatureValue}
-                  type="number"
-                  onChange={(value) => setTemperatureValue(Number(value))}
-                  placeholder="0.7"
-                />
-
-                <Field
-                  label="Top P"
-                  value={topPValue}
-                  type="number"
-                  onChange={(value) => setTopPValue(Number(value))}
-                  placeholder="1"
-                />
-
-                <Field
-                  label="最大 Token 数"
-                  value={maxTokensValue}
-                  type="number"
-                  onChange={(value) => setMaxTokensValue(Number(value))}
-                  placeholder="2048"
-                />
-
-                <Field
-                  label="上下文数量"
-                  value={contextCountValue}
-                  type="number"
-                  onChange={(value) => setContextCountValue(Number(value))}
-                  placeholder="10"
-                />
-
-                <RowSwitch
-                  title="流式输出"
-                  description="开启后，AI 会边生成边显示。"
-                  checked={streamValue}
-                  onChange={setStreamValue}
-                />
-
-                <RowSwitch
-                  title="开启思考"
-                  description="仅部分模型支持。若接口报错，请关闭。"
-                  checked={enableReasoningValue}
-                  onChange={setEnableReasoningValue}
-                />
-
-                <RowSwitch
-                  title="显示思考内容"
-                  description="如果模型返回 reasoning_content，则显示。"
-                  checked={showReasoningValue}
-                  onChange={setShowReasoningValue}
-                />
-              </div>
-            )}
-
-            {tab === "general" && (
-              <div className="mx-auto max-w-3xl space-y-4">
-                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
-                  <div className="text-sm font-semibold">常规设置</div>
-                  <p className="mt-2 text-sm text-[var(--color-foreground-muted)]">
-                    后续可以加入自动标题、发送快捷键、启动行为等功能。
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {tab === "display" && (
-              <div className="mx-auto max-w-3xl space-y-4">
-                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
-                  <div className="text-sm font-semibold">显示设置</div>
-                  <p className="mt-2 text-sm text-[var(--color-foreground-muted)]">
-                    后续可以加入字体大小、消息宽度、代码高亮等功能。
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {tab === "data" && (
-              <div className="mx-auto max-w-3xl space-y-4">
-                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
-                  <div className="text-sm font-semibold">数据设置</div>
-                  <p className="mt-2 text-sm text-[var(--color-foreground-muted)]">
-                    这里可以重置本地设置。
-                  </p>
-
-                  <Button
-                    variant="destructive"
-                    className="mt-4"
-                    onClick={resetAll}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDraft((current) => ({
+                        ...current,
+                        enabled: !current.enabled,
+                      }))
+                    }
+                    className={[
+                      "relative h-6 w-11 rounded-full transition-colors",
+                      draft.enabled ? "bg-emerald-500" : "bg-neutral-400/40",
+                    ].join(" ")}
                   >
-                    <RotateCcw size={16} />
-                    重置所有设置
-                  </Button>
+                    <span
+                      className={[
+                        "absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform",
+                        draft.enabled ? "translate-x-5" : "translate-x-0.5",
+                      ].join(" ")}
+                    />
+                  </button>
                 </div>
-              </div>
-            )}
 
-            {tab === "about" && (
-              <div className="mx-auto max-w-3xl space-y-4">
-                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
-                  <div className="text-sm font-semibold">Cherry Web</div>
-                  <p className="mt-2 text-sm text-[var(--color-foreground-muted)]">
-                    一个适配 iPhone Safari 和 PWA 的 AI 聊天网页应用。
-                  </p>
+                <div className="flex flex-wrap justify-between gap-2">
+                  <div className="flex gap-2">
+                    {draft.id && (
+                      <>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            const skill = skills.find(
+                              (item) => item.id === draft.id,
+                            )
+                            if (skill) toggleSkill(skill)
+                          }}
+                        >
+                          {draft.enabled ? "关闭技能" : "启用技能"}
+                        </Button>
+
+                        <Button
+                          variant="destructive"
+                          onClick={deleteCurrentSkill}
+                        >
+                          <Trash2 size={16} />
+                          删除技能
+                        </Button>
+                      </>
+                    )}
+                  </div>
+
+                  <Button onClick={saveCurrentSkill}>保存技能</Button>
                 </div>
               </div>
             )}
           </section>
-
-          <footer className="flex shrink-0 justify-end gap-2 border-t border-[var(--color-border)] px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
-            <Button variant="outline" onClick={onClose}>
-              取消
-            </Button>
-
-            <Button onClick={save}>保存设置</Button>
-          </footer>
         </main>
       </div>
+
+      {importOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-foreground)] shadow-[var(--shadow-xl)]">
+            <header className="flex h-12 items-center justify-between border-b border-[var(--color-border)] px-4">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <FileText size={17} />
+                安装 SKILL.md
+              </div>
+
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setImportOpen(false)}
+              >
+                <X size={18} />
+              </Button>
+            </header>
+
+            <div className="space-y-4 p-4">
+              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
+                <div className="text-sm font-semibold">支持的 SKILL.md 格式</div>
+
+                <pre className="mt-3 max-h-56 overflow-auto rounded-xl bg-[var(--color-popover)] p-3 text-xs leading-5 text-[var(--color-foreground-secondary)]">
+{`---
+name: content-research-writer
+category: business-productivity
+description: Assists in writing high-quality content.
+---
+
+# Content Research Writer
+
+This skill acts as your writing partner...`}
+                </pre>
+
+                <p className="mt-3 text-xs text-[var(--color-foreground-muted)]">
+                  会自动解析 name、category、description，并把正文作为技能内容。
+                </p>
+              </div>
+
+              <input
+                ref={mdFileInputRef}
+                type="file"
+                accept=".md,.markdown,text/markdown,text/plain"
+                multiple
+                className="hidden"
+                onChange={(event) => handleMdFiles(event.target.files)}
+              />
+
+              <div className="flex flex-wrap items-center gap-3">
+                <Button onClick={() => mdFileInputRef.current?.click()}>
+                  <FolderOpen size={16} />
+                  从 .md 文件安装
+                </Button>
+
+                <Button variant="outline" onClick={handlePasteImport}>
+                  <Upload size={16} />
+                  从粘贴内容安装
+                </Button>
+              </div>
+
+              <label className="block">
+                <div className="mb-2 text-sm font-medium">粘贴 SKILL.md 内容</div>
+                <textarea
+                  value={importText}
+                  onChange={(event) => setImportText(event.target.value)}
+                  placeholder="把别人分享给你的 SKILL.md 内容粘贴到这里..."
+                  rows={12}
+                  className="w-full resize-y rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 py-2 font-mono text-sm leading-6 outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                />
+              </label>
+
+              <div className="text-xs leading-5 text-[var(--color-foreground-muted)]">
+                提示：导入会追加到当前技能列表，不会删除已有技能。
+              </div>
+            </div>
+
+            <footer className="flex justify-end gap-2 border-t border-[var(--color-border)] px-4 py-3">
+              <Button variant="outline" onClick={() => setImportOpen(false)}>
+                取消
+              </Button>
+
+              <Button onClick={handlePasteImport}>
+                <Upload size={16} />
+                安装
+              </Button>
+            </footer>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
