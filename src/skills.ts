@@ -47,6 +47,14 @@ const DEFAULT_SKILLS: Skill[] = [
   },
 ]
 
+function createId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+
+  return `skill-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
 function safeParseSkills(raw: string | null): Skill[] | null {
   if (!raw) return null
 
@@ -65,13 +73,148 @@ function safeParseSkills(raw: string | null): Skill[] | null {
           ? item.triggers.map(String).filter(Boolean)
           : [],
         content: String(item.content || ""),
-        enabled: Boolean(item.enabled),
+        enabled: item.enabled === undefined ? true : Boolean(item.enabled),
         createdAt: Number(item.createdAt || Date.now()),
         updatedAt: Number(item.updatedAt || Date.now()),
       }))
   } catch {
     return null
   }
+}
+
+function toStringArray(value: any): string[] {
+  if (Array.isArray(value)) {
+    return value.map(String).map((item) => item.trim()).filter(Boolean)
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(/[,，\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+
+  return []
+}
+
+function pickContent(item: any) {
+  if (typeof item.content === "string") return item.content
+  if (typeof item.prompt === "string") return item.prompt
+  if (typeof item.systemPrompt === "string") return item.systemPrompt
+  if (typeof item.instruction === "string") return item.instruction
+  if (typeof item.instructions === "string") return item.instructions
+  if (typeof item.skill === "string") return item.skill
+  if (typeof item.markdown === "string") return item.markdown
+  if (typeof item.SKILL === "string") return item.SKILL
+  if (typeof item["SKILL.md"] === "string") return item["SKILL.md"]
+
+  return ""
+}
+
+function normalizeImportedSkill(item: any): Skill | null {
+  if (!item || typeof item !== "object") return null
+
+  const name = String(
+    item.name ||
+      item.title ||
+      item.displayName ||
+      item.skillName ||
+      item.id ||
+      "未命名技能",
+  ).trim()
+
+  const description = String(
+    item.description || item.desc || item.summary || "",
+  ).trim()
+
+  const triggers = toStringArray(
+    item.triggers ||
+      item.keywords ||
+      item.trigger ||
+      item.tags ||
+      item.examples ||
+      item.whenToUse,
+  )
+
+  const content = pickContent(item).trim()
+
+  if (!name || !content) return null
+
+  const now = Date.now()
+
+  return {
+    id: createId(),
+    name,
+    description,
+    triggers,
+    content,
+    enabled: item.enabled === undefined ? true : Boolean(item.enabled),
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+export function parseImportedSkillsFromJsonText(jsonText: string): Skill[] {
+  let parsed: any
+
+  try {
+    parsed = JSON.parse(jsonText)
+  } catch {
+    throw new Error("JSON 格式错误，无法解析。")
+  }
+
+  let rawSkills: any[] = []
+
+  if (Array.isArray(parsed)) {
+    rawSkills = parsed
+  } else if (Array.isArray(parsed.skills)) {
+    rawSkills = parsed.skills
+  } else if (Array.isArray(parsed.data)) {
+    rawSkills = parsed.data
+  } else if (parsed.skill && typeof parsed.skill === "object") {
+    rawSkills = [parsed.skill]
+  } else if (parsed.name || parsed.title || parsed.content || parsed.prompt) {
+    rawSkills = [parsed]
+  } else {
+    throw new Error("没有识别到技能数据。支持单个技能、技能数组或 { skills: [...] } 格式。")
+  }
+
+  const skills = rawSkills
+    .map((item) => normalizeImportedSkill(item))
+    .filter(Boolean) as Skill[]
+
+  if (skills.length === 0) {
+    throw new Error("没有找到有效技能。技能至少需要 name 和 content。")
+  }
+
+  return skills
+}
+
+export function importSkillsFromJsonText(jsonText: string, mode: "merge" | "replace" = "merge") {
+  const importedSkills = parseImportedSkillsFromJsonText(jsonText)
+
+  if (mode === "replace") {
+    saveSkills(importedSkills)
+    return importedSkills
+  }
+
+  const currentSkills = getSkills()
+  const nextSkills = [...importedSkills, ...currentSkills]
+
+  saveSkills(nextSkills)
+
+  return importedSkills
+}
+
+export function exportSkillsToJsonText() {
+  const data = {
+    type: "cherry-web-skills",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    skills: getSkills(),
+  }
+
+  return JSON.stringify(data, null, 2)
 }
 
 export function getSkills(): Skill[] {
@@ -95,7 +238,7 @@ export function addSkill(skill: Omit<Skill, "id" | "createdAt" | "updatedAt">) {
 
   const newSkill: Skill = {
     ...skill,
-    id: crypto.randomUUID(),
+    id: createId(),
     createdAt: now,
     updatedAt: now,
   }
