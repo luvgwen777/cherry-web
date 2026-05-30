@@ -125,34 +125,6 @@ function safeParseArray<T>(raw: string | null): T[] | null {
   }
 }
 
-function inferProviderIdFromModel(model: string) {
-  const lower = model.toLowerCase()
-
-  if (lower.includes("deepseek")) {
-    return "deepseek"
-  }
-
-  if (
-    lower.includes("gpt") ||
-    lower.includes("openai") ||
-    lower.includes("o1") ||
-    lower.includes("o3") ||
-    lower.includes("o4")
-  ) {
-    return "openai"
-  }
-
-  return getCurrentProviderIdSafe()
-}
-
-function getCurrentProviderIdSafe() {
-  const stored = localStorage.getItem(CURRENT_PROVIDER_KEY)
-
-  if (stored) return stored
-
-  return "openai"
-}
-
 function migrateLegacyProviderValues(providers: ProviderOption[]) {
   const legacyApiKey = localStorage.getItem("apiKey")
   const legacyBaseUrl = localStorage.getItem("baseUrl")
@@ -170,106 +142,20 @@ function migrateLegacyProviderValues(providers: ProviderOption[]) {
   })
 }
 
-function normalizeProviders(providers: ProviderOption[]) {
-  const result: ProviderOption[] = []
-
-  for (const provider of providers) {
-    if (!provider.id || !provider.name || !provider.baseUrl) continue
-
-    const exists = result.some((item) => item.id === provider.id)
-
-    if (exists) continue
-
-    result.push({
-      id: provider.id,
-      name: provider.name,
-      baseUrl: provider.baseUrl.replace(/\/$/, ""),
-      apiKey: provider.apiKey || "",
-    })
-  }
-
-  if (result.length === 0) {
-    return migrateLegacyProviderValues(DEFAULT_PROVIDERS)
-  }
-
-  return result
-}
-
-function normalizeModels(models: any[], providers: ProviderOption[]) {
-  const providerIds = providers.map((provider) => provider.id)
-
-  const result: ModelOption[] = []
-
-  for (const item of models) {
-    if (!item || !item.model) continue
-
-    const model = String(item.model)
-    const name = String(item.name || item.model)
-    const id = String(item.id || crypto.randomUUID())
-
-    let providerId = String(item.providerId || "")
-
-    if (!providerId || !providerIds.includes(providerId)) {
-      providerId = inferProviderIdFromModel(model)
-    }
-
-    if (!providerIds.includes(providerId)) {
-      providerId = providers[0]?.id || "openai"
-    }
-
-    const exists = result.some(
-      (existing) =>
-        existing.model === model && existing.providerId === providerId,
-    )
-
-    if (exists) continue
-
-    result.push({
-      id,
-      name,
-      model,
-      providerId,
-      vision: Boolean(item.vision),
-      reasoning: Boolean(item.reasoning),
-    })
-  }
-
-  if (result.length === 0) {
-    return DEFAULT_MODELS
-  }
-
-  return result
-}
-
-function persistNormalizedIfNeeded(
-  providers: ProviderOption[],
-  models: ModelOption[],
-) {
-  localStorage.setItem(PROVIDERS_KEY, JSON.stringify(providers))
-  localStorage.setItem(MODELS_KEY, JSON.stringify(models))
-}
-
 export function getProviderOptions(): ProviderOption[] {
   const stored = safeParseArray<ProviderOption>(
     localStorage.getItem(PROVIDERS_KEY),
   )
 
   if (!stored || stored.length === 0) {
-    const providers = migrateLegacyProviderValues(DEFAULT_PROVIDERS)
-    localStorage.setItem(PROVIDERS_KEY, JSON.stringify(providers))
-    return providers
+    return migrateLegacyProviderValues(DEFAULT_PROVIDERS)
   }
 
-  const providers = normalizeProviders(stored)
-
-  localStorage.setItem(PROVIDERS_KEY, JSON.stringify(providers))
-
-  return providers
+  return stored
 }
 
 export function saveProviderOptions(providers: ProviderOption[]) {
-  const normalizedProviders = normalizeProviders(providers)
-  localStorage.setItem(PROVIDERS_KEY, JSON.stringify(normalizedProviders))
+  localStorage.setItem(PROVIDERS_KEY, JSON.stringify(providers))
   emitSettingsUpdated()
 }
 
@@ -277,64 +163,21 @@ export function getProviderById(id: string) {
   return getProviderOptions().find((provider) => provider.id === id)
 }
 
-export function getModelOptions(): ModelOption[] {
-  const providers = getProviderOptions()
-
-  const stored = safeParseArray<any>(localStorage.getItem(MODELS_KEY))
-
-  if (!stored || stored.length === 0) {
-    localStorage.setItem(MODELS_KEY, JSON.stringify(DEFAULT_MODELS))
-    return DEFAULT_MODELS
-  }
-
-  const models = normalizeModels(stored, providers)
-
-  persistNormalizedIfNeeded(providers, models)
-
-  return models
-}
-
-export function saveModelOptions(models: ModelOption[]) {
-  const providers = getProviderOptions()
-  const normalizedModels = normalizeModels(models, providers)
-
-  localStorage.setItem(MODELS_KEY, JSON.stringify(normalizedModels))
-  emitSettingsUpdated()
-}
-
-export function getModel() {
-  const stored = localStorage.getItem("model")
-
-  const models = getModelOptions()
-
-  if (stored && models.some((item) => item.model === stored)) {
-    return stored
-  }
-
-  return models[0]?.model || "gpt-4o-mini"
-}
-
 export function getCurrentProviderId() {
   const stored = localStorage.getItem(CURRENT_PROVIDER_KEY)
-  const providers = getProviderOptions()
 
-  if (stored && providers.some((provider) => provider.id === stored)) {
+  if (stored && getProviderById(stored)) {
     return stored
   }
 
   const currentModel = getModel()
-  const modelOption = getModelOptions().find(
-    (item) => item.model === currentModel,
-  )
+  const modelOption = getModelOptions().find((item) => item.model === currentModel)
 
-  if (
-    modelOption &&
-    providers.some((provider) => provider.id === modelOption.providerId)
-  ) {
+  if (modelOption && getProviderById(modelOption.providerId)) {
     return modelOption.providerId
   }
 
-  return providers[0]?.id || "openai"
+  return getProviderOptions()[0]?.id || "openai"
 }
 
 export function setCurrentProviderId(id: string) {
@@ -343,14 +186,6 @@ export function setCurrentProviderId(id: string) {
 }
 
 export function getCurrentProvider() {
-  const currentModelOption = getCurrentModelOption()
-
-  if (currentModelOption) {
-    const provider = getProviderById(currentModelOption.providerId)
-
-    if (provider) return provider
-  }
-
   const providerId = getCurrentProviderId()
   const provider = getProviderById(providerId)
 
@@ -383,12 +218,7 @@ export function updateProviderOption(updatedProvider: ProviderOption) {
   const providers = getProviderOptions()
 
   const nextProviders = providers.map((provider) =>
-    provider.id === updatedProvider.id
-      ? {
-          ...updatedProvider,
-          baseUrl: updatedProvider.baseUrl.replace(/\/$/, ""),
-        }
-      : provider,
+    provider.id === updatedProvider.id ? updatedProvider : provider,
   )
 
   saveProviderOptions(nextProviders)
@@ -421,19 +251,38 @@ export function removeProviderOption(id: string) {
   }
 }
 
+export function getModelOptions(): ModelOption[] {
+  const stored = safeParseArray<ModelOption>(localStorage.getItem(MODELS_KEY))
+
+  if (!stored || stored.length === 0) {
+    return DEFAULT_MODELS
+  }
+
+  return stored
+}
+
+export function saveModelOptions(models: ModelOption[]) {
+  localStorage.setItem(MODELS_KEY, JSON.stringify(models))
+  emitSettingsUpdated()
+}
+
+export function getModel() {
+  return getString("model", "gpt-4o-mini")
+}
+
 export function setModel(value: string) {
   const models = getModelOptions()
   const found = models.find((item) => item.model === value)
 
   if (found) {
-    localStorage.setItem(CURRENT_PROVIDER_KEY, found.providerId)
+    setCurrentProviderId(found.providerId)
   }
 
   setString("model", value)
 }
 
 export function setCurrentModel(providerId: string, model: string) {
-  localStorage.setItem(CURRENT_PROVIDER_KEY, providerId)
+  setCurrentProviderId(providerId)
   setString("model", model)
 }
 
@@ -504,6 +353,9 @@ export function removeModelOption(id: string) {
   }
 }
 
+/**
+ * 兼容旧代码：现在 apiKey/baseUrl 实际保存在当前服务商里。
+ */
 export function getApiKey() {
   return getCurrentProvider()?.apiKey || ""
 }
@@ -588,21 +440,6 @@ export function getShowReasoning() {
 
 export function setShowReasoning(value: boolean) {
   setBoolean("showReasoning", value)
-}
-
-export function repairSettings() {
-  const providers = getProviderOptions()
-  const models = getModelOptions()
-
-  persistNormalizedIfNeeded(providers, models)
-
-  const currentModel = getCurrentModelOption()
-
-  if (currentModel) {
-    setCurrentModel(currentModel.providerId, currentModel.model)
-  }
-
-  emitSettingsUpdated()
 }
 
 export function resetSettings() {

@@ -1,14 +1,5 @@
 import { useState } from "react"
-import {
-  Menu,
-  Moon,
-  MoreHorizontal,
-  PenLine,
-  Plus,
-  Settings,
-  Trash2,
-  X,
-} from "lucide-react"
+import { Menu, Moon, MoreHorizontal, PenLine, Plus, Settings, Trash2, X } from "lucide-react"
 import { Button } from "./components/Button"
 import { Composer } from "./components/Composer"
 import { MessageBubble } from "./components/MessageBubble"
@@ -20,23 +11,12 @@ import type { Conversation } from "./types"
 function formatTime(timestamp: number) {
   const date = new Date(timestamp)
   const now = new Date()
-
   const isToday =
     date.getFullYear() === now.getFullYear() &&
     date.getMonth() === now.getMonth() &&
     date.getDate() === now.getDate()
-
-  if (isToday) {
-    return date.toLocaleTimeString("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-    })
-  }
-
-  return date.toLocaleDateString("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-  })
+  if (isToday) return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
+  return date.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" })
 }
 
 function ConversationItem({
@@ -55,7 +35,6 @@ function ConversationItem({
   onDelete: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
-
   return (
     <div className="relative">
       <button
@@ -71,25 +50,21 @@ function ConversationItem({
       >
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm">{conversation.title}</div>
-          <div className="mt-0.5 text-xs text-[var(--color-foreground-muted)]">
-            {formatTime(conversation.updatedAt)}
-          </div>
+          <div className="mt-0.5 text-xs text-[var(--color-foreground-muted)]">{formatTime(conversation.updatedAt)}</div>
         </div>
-
         <button
           type="button"
-          onClick={(event) => {
-            event.stopPropagation()
-            setMenuOpen((value) => !value)
+          onClick={(e) => {
+            e.stopPropagation()
+            setMenuOpen((v) => !v)
           }}
           className="flex size-7 shrink-0 items-center justify-center rounded-lg opacity-70 hover:bg-[var(--color-accent)] hover:opacity-100"
         >
           <MoreHorizontal size={16} />
         </button>
       </button>
-
       {menuOpen && (
-        <div className="absolute right-2 top-10 z-20 w-32 rounded-xl border border-[var(--color-border)] bg-[var(--color-popover)] p-1 shadow-[var(--shadow-md)]">
+        <div className="absolute right-2 top-10 z-20 w-32 rounded-xl border border-[var(--color-border)] bg-[var(--color-popover)] p-1 shadow-md">
           <button
             type="button"
             onClick={() => {
@@ -98,10 +73,8 @@ function ConversationItem({
             }}
             className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-sm hover:bg-[var(--color-accent)]"
           >
-            <PenLine size={14} />
-            重命名
+            <PenLine size={14} /> 重命名
           </button>
-
           <button
             type="button"
             onClick={() => {
@@ -110,8 +83,7 @@ function ConversationItem({
             }}
             className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-sm text-[var(--color-destructive)] hover:bg-[var(--color-accent)]"
           >
-            <Trash2 size={14} />
-            删除
+            <Trash2 size={14} /> 删除
           </button>
         </div>
       )}
@@ -119,13 +91,7 @@ function ConversationItem({
   )
 }
 
-function Sidebar({
-  mobile = false,
-  onClose,
-}: {
-  mobile?: boolean
-  onClose?: () => void
-}) {
+function Sidebar({ mobile = false, onClose }: { mobile?: boolean; onClose?: () => void }) {
   const {
     conversations,
     currentConversationId,
@@ -136,25 +102,7 @@ function Sidebar({
     renameConversation,
   } = useChatStore()
 
-  const sortedConversations = [...conversations].sort(
-    (a, b) => b.updatedAt - a.updatedAt,
-  )
-
-  function handleRename(conversation: Conversation) {
-    const title = window.prompt("请输入新的会话名称", conversation.title)
-
-    if (title === null) return
-
-    renameConversation(conversation.id, title)
-  }
-
-  function handleDelete(conversation: Conversation) {
-    const confirmed = window.confirm(`确定删除「${conversation.title}」吗？`)
-
-    if (!confirmed) return
-
-    deleteConversation(conversation.id)
-  }
+  const sorted = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt)
 
   return (
     <aside
@@ -165,51 +113,41 @@ function Sidebar({
     >
       <div className="mb-2 flex h-9 items-center justify-between px-3">
         <div className="text-sm font-semibold">Cherry Web</div>
-
         {mobile && (
           <Button variant="ghost" size="icon-sm" onClick={onClose}>
             <X size={18} />
           </Button>
         )}
       </div>
-
       <Button
         variant="secondary"
         className="mb-3 w-full justify-start"
-        onClick={() => {
-          createConversation()
-          onClose?.()
-        }}
+        onClick={() => { createConversation(); onClose?.() }}
         disabled={loading}
       >
-        <Plus size={16} />
-        新对话
+        <Plus size={16} /> 新对话
       </Button>
-
-      <div className="px-3 py-2 text-xs text-[var(--color-foreground-muted)]">
-        会话列表
-      </div>
-
+      <div className="px-3 py-2 text-xs text-[var(--color-foreground-muted)]">会话列表</div>
       <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pb-3">
-        {sortedConversations.map((conversation) => (
+        {sorted.map((conv) => (
           <ConversationItem
-            key={conversation.id}
-            conversation={conversation}
-            active={conversation.id === currentConversationId}
+            key={conv.id}
+            conversation={conv}
+            active={conv.id === currentConversationId}
             disabled={loading}
-            onClick={() => {
-              switchConversation(conversation.id)
-              onClose?.()
+            onClick={() => { switchConversation(conv.id); onClose?.() }}
+            onRename={() => {
+              const title = window.prompt("新名称", conv.title)
+              if (title !== null) renameConversation(conv.id, title)
             }}
-            onRename={() => handleRename(conversation)}
-            onDelete={() => handleDelete(conversation)}
+            onDelete={() => {
+              if (window.confirm(`删除「${conv.title}」？`)) deleteConversation(conv.id)
+            }}
           />
         ))}
       </div>
-
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-3 text-xs text-[var(--color-foreground-muted)]">
-        <div>当前版本：模型切换版</div>
-        <div className="mt-1">会话会保存在本机浏览器中。</div>
+        服务商版本 · 数据存于本机
       </div>
     </aside>
   )
@@ -217,7 +155,6 @@ function Sidebar({
 
 export default function App() {
   const { messages, clearMessages, loading } = useChatStore()
-
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
@@ -231,93 +168,50 @@ export default function App() {
         <div className="hidden lg:block">
           <Sidebar />
         </div>
-
         <main className="flex min-w-0 flex-1 flex-col">
           <header className="safe-top shrink-0 border-b border-[var(--color-border)] bg-[var(--color-background)]">
             <div className="flex h-11 items-center justify-between px-3">
               <div className="flex min-w-0 items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="lg:hidden"
-                  aria-label="菜单"
-                  onClick={() => setMobileSidebarOpen(true)}
-                >
+                <Button variant="ghost" size="icon-sm" className="lg:hidden" onClick={() => setMobileSidebarOpen(true)}>
                   <Menu size={18} />
                 </Button>
-
-                <div className="hidden min-w-0 sm:block">
+                <div className="hidden sm:block">
                   <h1 className="truncate text-sm font-medium">新对话</h1>
-
-                  {loading && (
-                    <div className="text-xs text-[var(--color-foreground-muted)]">
-                      AI 正在回复...
-                    </div>
-                  )}
+                  {loading && <div className="text-xs text-[var(--color-foreground-muted)]">AI 正在回复...</div>}
                 </div>
-
                 <ModelSelector />
               </div>
-
               <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => setSettingsOpen(true)}
-                  aria-label="设置"
-                >
+                <Button variant="ghost" size="icon-sm" onClick={() => setSettingsOpen(true)}>
                   <Settings size={17} />
                 </Button>
-
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={toggleDark}
-                  aria-label="切换深色模式"
-                >
+                <Button variant="ghost" size="icon-sm" onClick={toggleDark}>
                   <Moon size={17} />
                 </Button>
-
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={clearMessages}
-                  disabled={loading}
-                  aria-label="清空当前对话"
-                >
+                <Button variant="ghost" size="icon-sm" onClick={clearMessages} disabled={loading}>
                   <Trash2 size={17} />
                 </Button>
               </div>
             </div>
           </header>
-
           <section className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
             <div className="mx-auto flex max-w-3xl flex-col gap-4">
-              {messages.map((message) => (
-                <MessageBubble key={message.id} message={message} />
+              {messages.map((msg) => (
+                <MessageBubble key={msg.id} message={msg} />
               ))}
             </div>
           </section>
-
           <Composer />
         </main>
       </div>
-
       {mobileSidebarOpen && (
         <div className="fixed inset-0 z-40 bg-black/50 lg:hidden">
-          <div className="absolute bottom-0 left-0 top-0 w-[82vw] max-w-[320px] bg-[var(--color-sidebar)] shadow-[var(--shadow-xl)]">
+          <div className="absolute bottom-0 left-0 top-0 w-[82vw] max-w-[320px] bg-[var(--color-sidebar)] shadow-xl">
             <Sidebar mobile onClose={() => setMobileSidebarOpen(false)} />
           </div>
-
-          <button
-            type="button"
-            aria-label="关闭菜单"
-            className="absolute bottom-0 right-0 top-0 left-[82vw]"
-            onClick={() => setMobileSidebarOpen(false)}
-          />
+          <button className="absolute bottom-0 right-0 top-0 left-[82vw]" onClick={() => setMobileSidebarOpen(false)} />
         </div>
       )}
-
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </>
   )

@@ -1,8 +1,7 @@
 import { useRef, useState } from "react"
-import { ImagePlus, Send, X } from "lucide-react"
+import { ImagePlus, Send, Square, X } from "lucide-react"
 import { Button } from "./Button"
 import { fileToImageAttachment, useChatStore } from "../store"
-import { requestAI } from "../ai"
 import type { ImageAttachment } from "../types"
 import { ImagePreview } from "./ImagePreview"
 
@@ -13,14 +12,7 @@ export function Composer() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  const {
-    addMessage,
-    setLoading,
-    updateMessage,
-    updateReasoning,
-    updateUsage,
-    loading,
-  } = useChatStore()
+  const { loading, sendUserMessage, stopGeneration } = useChatStore()
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -47,8 +39,6 @@ export function Composer() {
 
     if ((!value && images.length === 0) || loading) return
 
-    const previousMessages = useChatStore.getState().messages
-
     setText("")
 
     const sendingImages = images
@@ -61,54 +51,11 @@ export function Composer() {
       textarea.style.height = "auto"
     }
 
-    const userMessage = {
-      id: crypto.randomUUID(),
-      role: "user" as const,
-      content: value,
-      images: sendingImages,
-      createdAt: Date.now(),
-    }
+    await sendUserMessage(value, sendingImages.length > 0 ? sendingImages : undefined)
+  }
 
-    const assistantId = crypto.randomUUID()
-
-    addMessage(userMessage)
-
-    addMessage({
-      id: assistantId,
-      role: "assistant",
-      content: "",
-      reasoningContent: "",
-      createdAt: Date.now(),
-    })
-
-    setLoading(true)
-
-    try {
-      const finalContent = await requestAI({
-        messages: [...previousMessages, userMessage],
-
-        onContent: (content) => {
-          updateMessage(assistantId, content)
-        },
-
-        onReasoning: (reasoning) => {
-          updateReasoning(assistantId, reasoning)
-        },
-
-        onUsage: (usage) => {
-          updateUsage(assistantId, usage)
-        },
-      })
-
-      updateMessage(assistantId, finalContent)
-    } catch (error) {
-      updateMessage(
-        assistantId,
-        error instanceof Error ? error.message : "请求失败",
-      )
-    } finally {
-      setLoading(false)
-    }
+  function handleStop() {
+    stopGeneration()
   }
 
   function handleInput(value: string) {
@@ -137,22 +84,25 @@ export function Composer() {
             onChange={(event) => handleFiles(event.target.files)}
           />
 
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="上传图片"
-            onClick={() => fileInputRef.current?.click()}
-            className="shrink-0 rounded-xl text-[var(--color-foreground-muted)] hover:text-[var(--color-foreground)]"
-          >
-            <ImagePlus size={19} />
-          </Button>
+          {!loading && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="上传图片"
+              onClick={() => fileInputRef.current?.click()}
+              className="shrink-0 rounded-xl text-[var(--color-foreground-muted)] hover:text-[var(--color-foreground)]"
+            >
+              <ImagePlus size={19} />
+            </Button>
+          )}
 
           <textarea
             ref={textareaRef}
             value={text}
             rows={1}
-            placeholder="输入消息，或上传图片..."
+            placeholder={loading ? "AI 正在回复..." : "输入消息，或上传图片..."}
+            disabled={loading}
             onChange={(event) => handleInput(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
@@ -160,27 +110,27 @@ export function Composer() {
                 handleSend()
               }
             }}
-            className="max-h-40 min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-base leading-6 text-[var(--color-foreground)] outline-none placeholder:text-[var(--color-foreground-muted)]"
+            className="max-h-40 min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-base leading-6 text-[var(--color-foreground)] outline-none placeholder:text-[var(--color-foreground-muted)] disabled:opacity-50"
           />
 
-          {text || images.length > 0 ? (
+          {loading ? (
             <Button
               size="icon"
-              disabled={loading}
+              onClick={handleStop}
+              aria-label="停止生成"
+              className="shrink-0 rounded-xl bg-red-500 text-white hover:bg-red-600"
+            >
+              <Square size={16} />
+            </Button>
+          ) : (
+            <Button
+              size="icon"
+              disabled={!text.trim() && images.length === 0}
               onClick={handleSend}
               aria-label="发送"
               className="shrink-0 rounded-xl bg-[var(--color-primary)] text-[var(--color-primary-foreground)] hover:bg-[var(--color-primary-hover)]"
             >
               <Send size={18} />
-            </Button>
-          ) : (
-            <Button
-              size="icon"
-              disabled
-              aria-label="无法发送"
-              className="shrink-0 rounded-xl"
-            >
-              <X size={18} />
             </Button>
           )}
         </div>
