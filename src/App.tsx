@@ -3,33 +3,15 @@ import { Menu, Moon, Plus, Settings, Trash2 } from "lucide-react"
 import { Button } from "./components/Button"
 import { Composer } from "./components/Composer"
 import { MessageBubble } from "./components/MessageBubble"
+import { SettingsPanel } from "./components/SettingsPanel"
 import { useChatStore } from "./store"
-import {
-  getApiKey,
-  getBaseUrl,
-  getModel,
-  setApiKey,
-  setBaseUrl,
-  setModel,
-} from "./settings"
 
 export default function App() {
-  const { messages, clearMessages } = useChatStore()
-
+  const { messages, clearMessages, loading } = useChatStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [apiKeyValue, setApiKeyValue] = useState(getApiKey())
-  const [baseUrlValue, setBaseUrlValue] = useState(getBaseUrl())
-  const [modelValue, setModelValue] = useState(getModel())
 
   function toggleDark() {
     document.documentElement.classList.toggle("dark")
-  }
-
-  function saveSettings() {
-    setApiKey(apiKeyValue.trim())
-    setBaseUrl(baseUrlValue.trim())
-    setModel(modelValue.trim())
-    setSettingsOpen(false)
   }
 
   return (
@@ -45,6 +27,7 @@ export default function App() {
               variant="secondary"
               className="mb-3 w-full justify-start"
               onClick={clearMessages}
+              disabled={loading}
             >
               <Plus size={16} />
               新对话
@@ -56,6 +39,10 @@ export default function App() {
 
             <div className="rounded-lg bg-[var(--color-secondary)] px-3 py-2 text-sm">
               当前对话
+            </div>
+
+            <div className="mt-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-3 text-xs text-[var(--color-foreground-muted)]">
+              当前版本：基础增强版
             </div>
           </div>
         </aside>
@@ -73,7 +60,14 @@ export default function App() {
                   <Menu size={18} />
                 </Button>
 
-                <h1 className="truncate text-sm font-medium">新对话</h1>
+                <div className="min-w-0">
+                  <h1 className="truncate text-sm font-medium">新对话</h1>
+                  {loading && (
+                    <div className="text-xs text-[var(--color-foreground-muted)]">
+                      AI 正在回复...
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center gap-1">
@@ -99,6 +93,7 @@ export default function App() {
                   variant="ghost"
                   size="icon-sm"
                   onClick={clearMessages}
+                  disabled={loading}
                   aria-label="清空对话"
                 >
                   <Trash2 size={17} />
@@ -119,58 +114,7 @@ export default function App() {
         </main>
       </div>
 
-      {settingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/50 p-3 sm:items-center sm:justify-center">
-          <div className="w-full rounded-3xl bg-[var(--color-card)] p-5 text-[var(--color-card-foreground)] shadow-[var(--shadow-xl)] sm:max-w-md">
-            <div className="mb-4">
-              <h2 className="text-base font-semibold">设置</h2>
-              <p className="mt-1 text-sm text-[var(--color-foreground-muted)]">
-                填入 OpenAI 兼容接口信息
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <label className="block">
-                <span className="mb-1 block text-sm">API Key</span>
-                <input
-                  value={apiKeyValue}
-                  onChange={(event) => setApiKeyValue(event.target.value)}
-                  placeholder="sk-..."
-                  className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
-                />
-              </label>
-
-              <label className="block">
-                <span className="mb-1 block text-sm">Base URL</span>
-                <input
-                  value={baseUrlValue}
-                  onChange={(event) => setBaseUrlValue(event.target.value)}
-                  placeholder="https://api.openai.com/v1"
-                  className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
-                />
-              </label>
-
-              <label className="block">
-                <span className="mb-1 block text-sm">Model</span>
-                <input
-                  value={modelValue}
-                  onChange={(event) => setModelValue(event.target.value)}
-                  placeholder="gpt-4o-mini"
-                  className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
-                />
-              </label>
-            </div>
-
-            <div className="mt-5 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setSettingsOpen(false)}>
-                取消
-              </Button>
-
-              <Button onClick={saveSettings}>保存</Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </>
   )
 }
