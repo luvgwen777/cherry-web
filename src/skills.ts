@@ -142,6 +142,18 @@ function splitKeywords(value: string) {
     .filter(Boolean)
 }
 
+function toStringArray(value: any): string[] {
+  if (Array.isArray(value)) {
+    return value.map(String).map((item) => item.trim()).filter(Boolean)
+  }
+
+  if (typeof value === "string") {
+    return splitKeywords(value)
+  }
+
+  return []
+}
+
 function buildDefaultTriggers(name: string, category: string, description: string) {
   const triggers = new Set<string>()
 
@@ -169,6 +181,12 @@ function buildDefaultTriggers(name: string, category: string, description: strin
 
   return Array.from(triggers).slice(0, 12)
 }
+
+/**
+ * =========================
+ * SKILL.md 导入 / 导出
+ * =========================
+ */
 
 export function parseSkillFromMarkdownText(markdown: string, filename?: string): Skill {
   const { frontMatter, body } = extractFrontMatter(markdown)
@@ -260,6 +278,154 @@ export function exportSkillToMarkdown(skill: Skill) {
   return `${frontMatter}\n\n${skill.content}`
 }
 
+/**
+ * =========================
+ * JSON 兼容导入 / 导出
+ * 防止旧 SkillsPanel.tsx 构建失败
+ * =========================
+ */
+
+function pickJsonContent(item: any) {
+  if (typeof item.content === "string") return item.content
+  if (typeof item.prompt === "string") return item.prompt
+  if (typeof item.systemPrompt === "string") return item.systemPrompt
+  if (typeof item.instruction === "string") return item.instruction
+  if (typeof item.instructions === "string") return item.instructions
+  if (typeof item.skill === "string") return item.skill
+  if (typeof item.markdown === "string") return item.markdown
+  if (typeof item.SKILL === "string") return item.SKILL
+  if (typeof item["SKILL.md"] === "string") return item["SKILL.md"]
+
+  return ""
+}
+
+function normalizeImportedJsonSkill(item: any): Skill | null {
+  if (!item || typeof item !== "object") return null
+
+  const name = String(
+    item.name ||
+      item.title ||
+      item.displayName ||
+      item.skillName ||
+      item.id ||
+      "未命名技能",
+  ).trim()
+
+  const category = String(item.category || item.group || "").trim()
+
+  const description = String(
+    item.description || item.desc || item.summary || "",
+  ).trim()
+
+  const triggers = toStringArray(
+    item.triggers ||
+      item.keywords ||
+      item.trigger ||
+      item.tags ||
+      item.examples ||
+      item.whenToUse,
+  )
+
+  const content = pickJsonContent(item).trim()
+
+  if (!name || !content) return null
+
+  const now = Date.now()
+
+  return {
+    id: createId(),
+    name,
+    category,
+    description,
+    triggers:
+      triggers.length > 0
+        ? triggers
+        : buildDefaultTriggers(name, category, description),
+    content,
+    enabled: item.enabled === undefined ? true : Boolean(item.enabled),
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+export function parseImportedSkillsFromJsonText(jsonText: string): Skill[] {
+  let parsed: any
+
+  try {
+    parsed = JSON.parse(jsonText)
+  } catch {
+    throw new Error("JSON 格式错误，无法解析。")
+  }
+
+  let rawSkills: any[] = []
+
+  if (Array.isArray(parsed)) {
+    rawSkills = parsed
+  } else if (Array.isArray(parsed.skills)) {
+    rawSkills = parsed.skills
+  } else if (Array.isArray(parsed.data)) {
+    rawSkills = parsed.data
+  } else if (parsed.skill && typeof parsed.skill === "object") {
+    rawSkills = [parsed.skill]
+  } else if (
+    parsed.name ||
+    parsed.title ||
+    parsed.content ||
+    parsed.prompt ||
+    parsed.markdown ||
+    parsed["SKILL.md"]
+  ) {
+    rawSkills = [parsed]
+  } else {
+    throw new Error(
+      "没有识别到技能数据。支持单个技能、技能数组或 { skills: [...] } 格式。",
+    )
+  }
+
+  const skills = rawSkills
+    .map((item) => normalizeImportedJsonSkill(item))
+    .filter(Boolean) as Skill[]
+
+  if (skills.length === 0) {
+    throw new Error("没有找到有效技能。技能至少需要 name 和 content。")
+  }
+
+  return skills
+}
+
+export function importSkillsFromJsonText(
+  jsonText: string,
+  mode: "merge" | "replace" = "merge",
+) {
+  const importedSkills = parseImportedSkillsFromJsonText(jsonText)
+
+  if (mode === "replace") {
+    saveSkills(importedSkills)
+    return importedSkills
+  }
+
+  saveSkills([...importedSkills, ...getSkills()])
+
+  return importedSkills
+}
+
+export function exportSkillsToJsonText() {
+  const data = {
+    type: "cherry-web-skills",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    skills: getSkills(),
+  }
+
+  return JSON.stringify(data, null, 2)
+}
+
+/**
+ * =========================
+ * 本地存储
+ * =========================
+ */
+
 function safeParseSkills(raw: string | null): Skill[] | null {
   if (!raw) return null
 
@@ -341,6 +507,12 @@ export function resetSkills() {
   localStorage.removeItem(SKILLS_KEY)
   window.dispatchEvent(new Event("cherry-skills-updated"))
 }
+
+/**
+ * =========================
+ * 技能匹配与注入
+ * =========================
+ */
 
 export function matchSkillsFromText(text: string) {
   const lowerText = text.toLowerCase()
