@@ -22,3 +22,10 @@ export interface ChatMessage {
   reasoningContent?: string
   usage?: TokenUsage
 }
+
+export interface Conversation {
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+}
