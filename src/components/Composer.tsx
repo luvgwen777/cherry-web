@@ -1,3 +1,4 @@
+import { requestAI } from "../ai"
 import { useRef, useState } from "react"
 import { Send } from "lucide-react"
 import { Button } from "./Button"
@@ -35,21 +36,26 @@ export function Composer() {
 
     setLoading(true)
 
-    // 这里先用假回复，后面再接真实 AI API
-    const fakeReply =
-      "这是一个本地测试回复。\n\n你的消息是：\n\n> " +
-      value +
-      "\n\n下一步可以接入 OpenAI、Claude、Gemini 或自定义 API。"
+    try {
+  const allMessages = useChatStore.getState().messages
 
-    let current = ""
+  const reply = await requestAI([...allMessages, userMessage])
 
-    for (const char of fakeReply) {
-      current += char
-      updateMessage(assistantId, current)
-      await new Promise((resolve) => setTimeout(resolve, 15))
-    }
+  let current = ""
 
-    setLoading(false)
+  for (const char of reply) {
+    current += char
+    updateMessage(assistantId, current)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+} catch (error) {
+  updateMessage(
+    assistantId,
+    error instanceof Error ? error.message : "请求失败",
+  )
+} finally {
+  setLoading(false)
+}
   }
 
   function handleInput(value: string) {
