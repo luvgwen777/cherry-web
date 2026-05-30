@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react"
 import {
   Download,
-  FileJson,
+  FileText,
   FolderOpen,
   Plus,
   RotateCcw,
@@ -14,9 +14,10 @@ import {
 import { Button } from "./Button"
 import {
   addSkill,
-  exportSkillsToJsonText,
+  exportSkillToMarkdown,
   getSkills,
-  importSkillsFromJsonText,
+  importSkillMarkdownText,
+  importSkillMarkdownTexts,
   removeSkill,
   resetSkills,
   saveSkills,
@@ -46,6 +47,7 @@ function createEmptySkill(): Skill {
     id: "",
     name: "",
     description: "",
+    category: "",
     triggers: [],
     content: "",
     enabled: true,
@@ -67,7 +69,7 @@ function readFileAsText(file: File): Promise<string> {
 
 function downloadTextFile(filename: string, text: string) {
   const blob = new Blob([text], {
-    type: "application/json;charset=utf-8",
+    type: "text/markdown;charset=utf-8",
   })
 
   const url = URL.createObjectURL(blob)
@@ -80,8 +82,17 @@ function downloadTextFile(filename: string, text: string) {
   URL.revokeObjectURL(url)
 }
 
+function safeFilename(value: string) {
+  return (
+    value
+      .trim()
+      .replace(/[\\/:*?"<>|]/g, "-")
+      .replace(/\s+/g, "-") || "SKILL"
+  )
+}
+
 export function SkillsPanel({ open, onClose }: Props) {
-  const jsonFileInputRef = useRef<HTMLInputElement | null>(null)
+  const mdFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const [skills, setSkills] = useState<Skill[]>(getSkills())
   const [selectedId, setSelectedId] = useState(skills[0]?.id || "")
@@ -92,7 +103,6 @@ export function SkillsPanel({ open, onClose }: Props) {
 
   const [importOpen, setImportOpen] = useState(false)
   const [importText, setImportText] = useState("")
-  const [importMode, setImportMode] = useState<"merge" | "replace">("merge")
 
   const filteredSkills = useMemo(() => {
     const keyword = search.trim().toLowerCase()
@@ -103,6 +113,7 @@ export function SkillsPanel({ open, onClose }: Props) {
       return (
         skill.name.toLowerCase().includes(keyword) ||
         skill.description.toLowerCase().includes(keyword) ||
+        String(skill.category || "").toLowerCase().includes(keyword) ||
         skill.triggers.join(" ").toLowerCase().includes(keyword)
       )
     })
@@ -141,6 +152,7 @@ export function SkillsPanel({ open, onClose }: Props) {
   function createSkill() {
     const newSkill = addSkill({
       name: "新技能",
+      category: "custom",
       description: "请填写这个技能的用途。",
       triggers: ["新技能"],
       content:
@@ -172,6 +184,7 @@ export function SkillsPanel({ open, onClose }: Props) {
     if (!draft.id) {
       addSkill({
         name,
+        category: draft.category?.trim() || "",
         description: draft.description.trim(),
         triggers: draft.triggers,
         content,
@@ -187,6 +200,7 @@ export function SkillsPanel({ open, onClose }: Props) {
         ? {
             ...draft,
             name,
+            category: draft.category?.trim() || "",
             description: draft.description.trim(),
             content,
             updatedAt: Date.now(),
@@ -235,12 +249,35 @@ export function SkillsPanel({ open, onClose }: Props) {
     refresh(getSkills())
   }
 
-  async function handleJsonFile(file: File | undefined) {
-    if (!file) return
+  async function handleMdFiles(files: FileList | null) {
+    if (!files || files.length === 0) return
 
     try {
-      const text = await readFileAsText(file)
-      const importedSkills = importSkillsFromJsonText(text, importMode)
+      const markdownFiles = Array.from(files).filter((file) => {
+        const lowerName = file.name.toLowerCase()
+
+        return (
+          lowerName.endsWith(".md") ||
+          lowerName.endsWith(".markdown") ||
+          file.type === "text/markdown" ||
+          file.type === "text/plain" ||
+          file.type === ""
+        )
+      })
+
+      if (markdownFiles.length === 0) {
+        alert("请选择 .md 或 .markdown 文件")
+        return
+      }
+
+      const fileTexts = await Promise.all(
+        markdownFiles.map(async (file) => ({
+          filename: file.name,
+          text: await readFileAsText(file),
+        })),
+      )
+
+      const importedSkills = importSkillMarkdownTexts(fileTexts)
 
       setImportOpen(false)
       setImportText("")
@@ -250,36 +287,39 @@ export function SkillsPanel({ open, onClose }: Props) {
     } catch (error) {
       alert(error instanceof Error ? error.message : "导入失败")
     } finally {
-      if (jsonFileInputRef.current) {
-        jsonFileInputRef.current.value = ""
+      if (mdFileInputRef.current) {
+        mdFileInputRef.current.value = ""
       }
     }
   }
 
   function handlePasteImport() {
     if (!importText.trim()) {
-      alert("请先粘贴 skill JSON")
+      alert("请先粘贴 SKILL.md 内容")
       return
     }
 
     try {
-      const importedSkills = importSkillsFromJsonText(importText, importMode)
+      const importedSkill = importSkillMarkdownText(importText, "SKILL.md")
 
       setImportOpen(false)
       setImportText("")
       refresh(getSkills())
 
-      alert(`导入成功：${importedSkills.length} 个技能`)
+      alert(`导入成功：${importedSkill.name}`)
     } catch (error) {
       alert(error instanceof Error ? error.message : "导入失败")
     }
   }
 
-  function handleExport() {
-    const jsonText = exportSkillsToJsonText()
-    const date = new Date().toISOString().slice(0, 10)
+  function handleExportCurrent() {
+    if (!draft.id) {
+      alert("请先选择一个技能")
+      return
+    }
 
-    downloadTextFile(`cherry-web-skills-${date}.json`, jsonText)
+    const markdown = exportSkillToMarkdown(draft)
+    downloadTextFile(`${safeFilename(draft.name)}.md`, markdown)
   }
 
   const hasSkills = skills.length > 0
@@ -325,7 +365,7 @@ export function SkillsPanel({ open, onClose }: Props) {
             <Button
               variant="outline"
               className="justify-center"
-              onClick={handleExport}
+              onClick={handleExportCurrent}
             >
               <Download size={15} />
               导出
@@ -362,6 +402,10 @@ export function SkillsPanel({ open, onClose }: Props) {
                   </span>
                 </div>
 
+                <div className="mt-1 truncate text-xs text-[var(--color-foreground-muted)]">
+                  {skill.category || "未分类"}
+                </div>
+
                 <div className="mt-1 line-clamp-2 text-xs text-[var(--color-foreground-muted)]">
                   {skill.description || "暂无描述"}
                 </div>
@@ -393,16 +437,16 @@ export function SkillsPanel({ open, onClose }: Props) {
                 onClick={() => setImportOpen(true)}
               >
                 <Upload size={15} />
-                从 JSON 安装
+                从 SKILL.md 安装
               </Button>
 
               <Button
                 variant="outline"
                 className="hidden md:flex"
-                onClick={handleExport}
+                onClick={handleExportCurrent}
               >
                 <Download size={15} />
-                导出
+                导出 MD
               </Button>
 
               <Button className="md:hidden" onClick={createSkill}>
@@ -422,12 +466,12 @@ export function SkillsPanel({ open, onClose }: Props) {
               onClick={() => setImportOpen(true)}
               className="shrink-0 rounded-xl bg-[var(--color-secondary)] px-3 py-2 text-sm"
             >
-              导入 JSON
+              导入 MD
             </button>
 
             <button
               type="button"
-              onClick={handleExport}
+              onClick={handleExportCurrent}
               className="shrink-0 rounded-xl bg-[var(--color-secondary)] px-3 py-2 text-sm"
             >
               导出
@@ -461,13 +505,13 @@ export function SkillsPanel({ open, onClose }: Props) {
                   <div className="text-lg font-semibold">未选择技能</div>
 
                   <p className="mt-3 text-sm leading-6 text-[var(--color-foreground-muted)]">
-                    通过 JSON 文件安装，或粘贴别人分享的 skill JSON 来扩展 Agent 的能力。
+                    通过 SKILL.md 文件安装，或粘贴别人分享的 SKILL.md 内容来扩展 Agent 的能力。
                   </p>
 
                   <div className="mt-6 flex justify-center gap-3">
                     <Button onClick={() => setImportOpen(true)}>
                       <Upload size={16} />
-                      从 JSON 安装
+                      从 SKILL.md 安装
                     </Button>
 
                     <Button variant="outline" onClick={createSkill}>
@@ -497,29 +541,29 @@ export function SkillsPanel({ open, onClose }: Props) {
                           name: event.target.value,
                         }))
                       }
-                      placeholder="例如：小红书文案专家"
+                      placeholder="例如：content-research-writer"
                       className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
                     />
                   </label>
 
                   <label className="block">
-                    <div className="mb-2 text-sm font-medium">触发关键词</div>
+                    <div className="mb-2 text-sm font-medium">分类 category</div>
                     <input
-                      value={triggersToText(draft.triggers)}
+                      value={draft.category || ""}
                       onChange={(event) =>
                         setDraft((current) => ({
                           ...current,
-                          triggers: parseTriggers(event.target.value),
+                          category: event.target.value,
                         }))
                       }
-                      placeholder="小红书，文案，种草"
+                      placeholder="business-productivity"
                       className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
                     />
                   </label>
                 </div>
 
                 <label className="block">
-                  <div className="mb-2 text-sm font-medium">描述</div>
+                  <div className="mb-2 text-sm font-medium">描述 description</div>
                   <textarea
                     value={draft.description}
                     onChange={(event) =>
@@ -535,8 +579,23 @@ export function SkillsPanel({ open, onClose }: Props) {
                 </label>
 
                 <label className="block">
+                  <div className="mb-2 text-sm font-medium">触发关键词</div>
+                  <input
+                    value={triggersToText(draft.triggers)}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        triggers: parseTriggers(event.target.value),
+                      }))
+                    }
+                    placeholder="content-research-writer，business-productivity，writing"
+                    className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                  />
+                </label>
+
+                <label className="block">
                   <div className="mb-2 text-sm font-medium">
-                    技能内容 / SKILL.md
+                    技能内容 / SKILL.md 正文
                   </div>
                   <textarea
                     value={draft.content}
@@ -546,8 +605,8 @@ export function SkillsPanel({ open, onClose }: Props) {
                         content: event.target.value,
                       }))
                     }
-                    placeholder="在这里写技能指令。比如：你是一个专业的小红书文案专家，请按照以下规则..."
-                    rows={14}
+                    placeholder="# Content Research Writer..."
+                    rows={16}
                     className="w-full resize-y rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 py-2 font-mono text-sm leading-6 outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
                   />
                 </label>
@@ -622,8 +681,8 @@ export function SkillsPanel({ open, onClose }: Props) {
           <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-foreground)] shadow-[var(--shadow-xl)]">
             <header className="flex h-12 items-center justify-between border-b border-[var(--color-border)] px-4">
               <div className="flex items-center gap-2 text-sm font-semibold">
-                <FileJson size={17} />
-                安装 Skill JSON
+                <FileText size={17} />
+                安装 SKILL.md
               </div>
 
               <Button
@@ -637,73 +696,59 @@ export function SkillsPanel({ open, onClose }: Props) {
 
             <div className="space-y-4 p-4">
               <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
-                <div className="text-sm font-semibold">支持的 JSON 格式</div>
+                <div className="text-sm font-semibold">支持的 SKILL.md 格式</div>
 
-                <pre className="mt-3 overflow-x-auto rounded-xl bg-[var(--color-popover)] p-3 text-xs leading-5 text-[var(--color-foreground-secondary)]">
-{`{
-  "name": "小红书文案专家",
-  "description": "生成小红书文案",
-  "triggers": ["小红书", "文案", "种草"],
-  "content": "你是一个小红书爆款文案专家..."
-}`}
+                <pre className="mt-3 max-h-56 overflow-auto rounded-xl bg-[var(--color-popover)] p-3 text-xs leading-5 text-[var(--color-foreground-secondary)]">
+{`---
+name: content-research-writer
+category: business-productivity
+description: Assists in writing high-quality content.
+---
+
+# Content Research Writer
+
+This skill acts as your writing partner...`}
                 </pre>
 
                 <p className="mt-3 text-xs text-[var(--color-foreground-muted)]">
-                  也支持技能数组，或者 {"{ skills: [...] }"} 格式。
+                  会自动解析 name、category、description，并把正文作为技能内容。
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
-                <input
-                  ref={jsonFileInputRef}
-                  type="file"
-                  accept=".json,application/json"
-                  className="hidden"
-                  onChange={(event) => handleJsonFile(event.target.files?.[0])}
-                />
+              <input
+                ref={mdFileInputRef}
+                type="file"
+                accept=".md,.markdown,text/markdown,text/plain"
+                multiple
+                className="hidden"
+                onChange={(event) => handleMdFiles(event.target.files)}
+              />
 
-                <Button onClick={() => jsonFileInputRef.current?.click()}>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button onClick={() => mdFileInputRef.current?.click()}>
                   <FolderOpen size={16} />
-                  从 JSON 文件安装
+                  从 .md 文件安装
                 </Button>
 
                 <Button variant="outline" onClick={handlePasteImport}>
                   <Upload size={16} />
                   从粘贴内容安装
                 </Button>
-
-                <label className="ml-auto flex items-center gap-2 text-sm text-[var(--color-foreground-muted)]">
-                  <input
-                    type="radio"
-                    checked={importMode === "merge"}
-                    onChange={() => setImportMode("merge")}
-                  />
-                  追加
-                </label>
-
-                <label className="flex items-center gap-2 text-sm text-[var(--color-foreground-muted)]">
-                  <input
-                    type="radio"
-                    checked={importMode === "replace"}
-                    onChange={() => setImportMode("replace")}
-                  />
-                  替换全部
-                </label>
               </div>
 
               <label className="block">
-                <div className="mb-2 text-sm font-medium">粘贴 Skill JSON</div>
+                <div className="mb-2 text-sm font-medium">粘贴 SKILL.md 内容</div>
                 <textarea
                   value={importText}
                   onChange={(event) => setImportText(event.target.value)}
-                  placeholder="把别人分享给你的 skill JSON 粘贴到这里..."
-                  rows={10}
+                  placeholder="把别人分享给你的 SKILL.md 内容粘贴到这里..."
+                  rows={12}
                   className="w-full resize-y rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 py-2 font-mono text-sm leading-6 outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
                 />
               </label>
 
               <div className="text-xs leading-5 text-[var(--color-foreground-muted)]">
-                提示：选择“追加”会保留当前技能；选择“替换全部”会清空当前技能后再导入。
+                提示：导入会追加到当前技能列表，不会删除已有技能。
               </div>
             </div>
 
@@ -723,3 +768,5 @@ export function SkillsPanel({ open, onClose }: Props) {
     </div>
   )
 }
+
+export default SkillsPanel
