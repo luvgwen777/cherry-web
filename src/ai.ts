@@ -8,6 +8,7 @@ import {
   getTemperature,
   getTopP,
 } from "./settings"
+import { buildSkillSystemPromptFromText } from "./skills"
 import type { ChatMessage, TokenUsage } from "./types"
 
 interface RequestAIOptions {
@@ -21,10 +22,31 @@ function buildApiMessages(messages: ChatMessage[]) {
   const contextCount = getContextCount()
   const recentMessages = messages.slice(-contextCount)
 
-  return recentMessages
+  const latestUserMessage = [...messages]
+    .reverse()
+    .find((message) => message.role === "user")
+
+  const skillPrompt = buildSkillSystemPromptFromText(
+    latestUserMessage?.content || "",
+  )
+
+  const apiMessages: any[] = []
+
+  if (skillPrompt) {
+    apiMessages.push({
+      role: "system",
+      content: skillPrompt,
+    })
+  }
+
+  const normalMessages = recentMessages
     .filter((message) => message.content.trim() || message.images?.length)
     .map((message) => {
-      if (message.role === "user" && message.images && message.images.length > 0) {
+      if (
+        message.role === "user" &&
+        message.images &&
+        message.images.length > 0
+      ) {
         return {
           role: message.role,
           content: [
@@ -47,6 +69,8 @@ function buildApiMessages(messages: ChatMessage[]) {
         content: message.content,
       }
     })
+
+  return [...apiMessages, ...normalMessages]
 }
 
 function readReasoningFromMessage(message: any) {
@@ -88,10 +112,7 @@ function normalizeUsage(usage: any): TokenUsage {
       usage.output_tokens ??
       usage.completionTokens ??
       undefined,
-    totalTokens:
-      usage.total_tokens ??
-      usage.totalTokens ??
-      undefined,
+    totalTokens: usage.total_tokens ?? usage.totalTokens ?? undefined,
   }
 }
 
