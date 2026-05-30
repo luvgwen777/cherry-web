@@ -60,7 +60,7 @@ function createId() {
 }
 
 function cleanYamlValue(value: string) {
-  let result = value.trim()
+  let result = String(value || "").trim()
 
   if (
     (result.startsWith('"') && result.endsWith('"')) ||
@@ -98,7 +98,7 @@ function parseSimpleYaml(frontMatter: string) {
 }
 
 function extractFrontMatter(markdown: string) {
-  const normalized = markdown.replace(/\r\n/g, "\n")
+  const normalized = markdown.replace(/\r\n/g, "\n").trim()
 
   if (!normalized.startsWith("---\n")) {
     return {
@@ -136,7 +136,7 @@ function filenameToName(filename?: string) {
 }
 
 function splitKeywords(value: string) {
-  return value
+  return String(value || "")
     .split(/[,，、\n]/)
     .map((item) => item.trim())
     .filter(Boolean)

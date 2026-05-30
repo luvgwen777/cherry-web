@@ -260,7 +260,8 @@ export function SkillsPanel({ open, onClose }: Props) {
           lowerName.endsWith(".md") ||
           lowerName.endsWith(".markdown") ||
           file.type === "text/markdown" ||
-          file.type === "text/plain"
+          file.type === "text/plain" ||
+          file.type === ""
         )
       })
 
