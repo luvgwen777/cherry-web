@@ -13,6 +13,7 @@ import { Button } from "./components/Button"
 import { Composer } from "./components/Composer"
 import { MessageBubble } from "./components/MessageBubble"
 import { SettingsPanel } from "./components/SettingsPanel"
+import { ModelSelector } from "./components/ModelSelector"
 import { useChatStore } from "./store"
 import type { Conversation } from "./types"
 
@@ -207,7 +208,7 @@ function Sidebar({
       </div>
 
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-3 text-xs text-[var(--color-foreground-muted)]">
-        <div>当前版本：会话增强版</div>
+        <div>当前版本：模型切换版</div>
         <div className="mt-1">会话会保存在本机浏览器中。</div>
       </div>
     </aside>
@@ -245,7 +246,7 @@ export default function App() {
                   <Menu size={18} />
                 </Button>
 
-                <div className="min-w-0">
+                <div className="hidden min-w-0 sm:block">
                   <h1 className="truncate text-sm font-medium">新对话</h1>
 
                   {loading && (
@@ -254,6 +255,8 @@ export default function App() {
                     </div>
                   )}
                 </div>
+
+                <ModelSelector />
               </div>
 
               <div className="flex items-center gap-1">
@@ -309,7 +312,7 @@ export default function App() {
           <button
             type="button"
             aria-label="关闭菜单"
-            className="absolute inset-y-0 right-0 left-[82vw]"
+            className="absolute bottom-0 right-0 top-0 left-[82vw]"
             onClick={() => setMobileSidebarOpen(false)}
           />
         </div>

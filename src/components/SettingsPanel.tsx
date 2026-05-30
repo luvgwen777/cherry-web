@@ -4,34 +4,45 @@ import {
   Database,
   Eye,
   Info,
+  Plus,
   RotateCcw,
+  Server,
   Settings,
   SlidersHorizontal,
+  Trash2,
   X,
 } from "lucide-react"
 import { Button } from "./Button"
 import {
-  getApiKey,
-  getBaseUrl,
+  addModelOption,
+  addProviderOption,
   getContextCount,
+  getCurrentProviderId,
   getEnableReasoning,
   getMaxTokens,
   getModel,
+  getModelOptions,
+  getProviderOptions,
   getShowReasoning,
   getStreamOutput,
   getTemperature,
   getTopP,
+  removeModelOption,
+  removeProviderOption,
   resetSettings,
-  setApiKey,
-  setBaseUrl,
+  saveModelOptions,
+  saveProviderOptions,
   setContextCount,
+  setCurrentModel,
+  setCurrentProviderId,
   setEnableReasoning,
   setMaxTokens,
-  setModel,
   setShowReasoning,
   setStreamOutput,
   setTemperature,
   setTopP,
+  type ModelOption,
+  type ProviderOption,
 } from "../settings"
 
 interface Props {
@@ -39,7 +50,7 @@ interface Props {
   onClose: () => void
 }
 
-type SettingsTab = "model" | "general" | "display" | "data" | "about"
+type SettingsTab = "provider" | "model" | "general" | "display" | "data" | "about"
 
 function RowSwitch({
   title,
@@ -109,12 +120,32 @@ function Field({
   )
 }
 
-export function SettingsPanel({ open, onClose }: Props) {
-  const [tab, setTab] = useState<SettingsTab>("model")
+function getProviderName(providerId: string, providers: ProviderOption[]) {
+  return providers.find((item) => item.id === providerId)?.name || "未知服务商"
+}
 
-  const [apiKeyValue, setApiKeyValue] = useState(getApiKey())
-  const [baseUrlValue, setBaseUrlValue] = useState(getBaseUrl())
+export function SettingsPanel({ open, onClose }: Props) {
+  const [tab, setTab] = useState<SettingsTab>("provider")
+
+  const [providers, setProviders] = useState<ProviderOption[]>(
+    getProviderOptions(),
+  )
+  const [models, setModels] = useState<ModelOption[]>(getModelOptions())
+
+  const [currentProviderId, setCurrentProviderIdState] =
+    useState(getCurrentProviderId())
   const [modelValue, setModelValue] = useState(getModel())
+
+  const [newProviderName, setNewProviderName] = useState("")
+  const [newProviderBaseUrl, setNewProviderBaseUrl] = useState("")
+  const [newProviderApiKey, setNewProviderApiKey] = useState("")
+
+  const [newModelName, setNewModelName] = useState("")
+  const [newModelId, setNewModelId] = useState("")
+  const [newModelProviderId, setNewModelProviderId] =
+    useState(getCurrentProviderId())
+  const [newModelVision, setNewModelVision] = useState(false)
+  const [newModelReasoning, setNewModelReasoning] = useState(false)
 
   const [temperatureValue, setTemperatureValue] = useState(getTemperature())
   const [topPValue, setTopPValue] = useState(getTopP())
@@ -131,10 +162,38 @@ export function SettingsPanel({ open, onClose }: Props) {
 
   if (!open) return null
 
+  function refreshProviderAndModels() {
+    setProviders(getProviderOptions())
+    setModels(getModelOptions())
+  }
+
   function save() {
-    setApiKey(apiKeyValue.trim())
-    setBaseUrl(baseUrlValue.trim())
-    setModel(modelValue.trim())
+    saveProviderOptions(
+      providers.map((provider) => ({
+        ...provider,
+        name: provider.name.trim(),
+        baseUrl: provider.baseUrl.trim().replace(/\/$/, ""),
+        apiKey: provider.apiKey.trim(),
+      })),
+    )
+
+    saveModelOptions(
+      models.map((model) => ({
+        ...model,
+        name: model.name.trim(),
+        model: model.model.trim(),
+      })),
+    )
+
+    setCurrentProviderId(currentProviderId)
+
+    const selectedModel = models.find((model) => model.model === modelValue)
+
+    if (selectedModel) {
+      setCurrentModel(selectedModel.providerId, selectedModel.model)
+    } else if (models[0]) {
+      setCurrentModel(models[0].providerId, models[0].model)
+    }
 
     setTemperature(Number(temperatureValue))
     setTopP(Number(topPValue))
@@ -149,11 +208,136 @@ export function SettingsPanel({ open, onClose }: Props) {
   }
 
   function resetAll() {
+    const confirmed = window.confirm("确定要重置所有设置吗？")
+
+    if (!confirmed) return
+
     resetSettings()
     location.reload()
   }
 
+  function addProvider() {
+    if (!newProviderName.trim()) {
+      alert("请填写服务商名称")
+      return
+    }
+
+    if (!newProviderBaseUrl.trim()) {
+      alert("请填写 Base URL")
+      return
+    }
+
+    addProviderOption(newProviderName, newProviderBaseUrl, newProviderApiKey)
+
+    setNewProviderName("")
+    setNewProviderBaseUrl("")
+    setNewProviderApiKey("")
+
+    refreshProviderAndModels()
+  }
+
+  function updateProvider(id: string, patch: Partial<ProviderOption>) {
+    setProviders((current) =>
+      current.map((provider) =>
+        provider.id === id
+          ? {
+              ...provider,
+              ...patch,
+            }
+          : provider,
+      ),
+    )
+  }
+
+  function deleteProvider(id: string) {
+    if (providers.length <= 1) {
+      alert("至少保留一个服务商")
+      return
+    }
+
+    const provider = providers.find((item) => item.id === id)
+    const confirmed = window.confirm(
+      `确定删除服务商「${provider?.name || "未知"}」吗？它下面的模型也会删除。`,
+    )
+
+    if (!confirmed) return
+
+    removeProviderOption(id)
+    refreshProviderAndModels()
+
+    const nextProviders = getProviderOptions()
+
+    if (currentProviderId === id && nextProviders[0]) {
+      setCurrentProviderIdState(nextProviders[0].id)
+    }
+  }
+
+  function addModel() {
+    if (!newModelName.trim()) {
+      alert("请填写模型显示名称")
+      return
+    }
+
+    if (!newModelId.trim()) {
+      alert("请填写模型 ID")
+      return
+    }
+
+    if (!newModelProviderId) {
+      alert("请选择服务商")
+      return
+    }
+
+    addModelOption(
+      newModelName,
+      newModelId,
+      newModelProviderId,
+      newModelVision,
+      newModelReasoning,
+    )
+
+    setNewModelName("")
+    setNewModelId("")
+    setNewModelVision(false)
+    setNewModelReasoning(false)
+
+    refreshProviderAndModels()
+  }
+
+  function updateModel(id: string, patch: Partial<ModelOption>) {
+    setModels((current) =>
+      current.map((model) =>
+        model.id === id
+          ? {
+              ...model,
+              ...patch,
+            }
+          : model,
+      ),
+    )
+  }
+
+  function deleteModel(id: string) {
+    if (models.length <= 1) {
+      alert("至少保留一个模型")
+      return
+    }
+
+    const model = models.find((item) => item.id === id)
+    const confirmed = window.confirm(`确定删除模型「${model?.name || "未知"}」吗？`)
+
+    if (!confirmed) return
+
+    removeModelOption(id)
+    refreshProviderAndModels()
+  }
+
   const menu = [
+    {
+      id: "provider" as const,
+      label: "API 服务商",
+      icon: Server,
+    },
     {
       id: "model" as const,
       label: "模型设置",
@@ -244,28 +428,342 @@ export function SettingsPanel({ open, onClose }: Props) {
           </div>
 
           <section className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
+            {tab === "provider" && (
+              <div className="mx-auto max-w-3xl">
+                <div className="mb-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
+                  <div className="text-sm font-semibold">API 服务商</div>
+                  <p className="mt-2 text-sm text-[var(--color-foreground-muted)]">
+                    每个服务商有自己的 API Key 和 Base URL。模型会绑定到某个服务商。
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  {providers.map((provider) => (
+                    <div
+                      key={provider.id}
+                      className={[
+                        "rounded-2xl border bg-[var(--color-card)] p-4",
+                        currentProviderId === provider.id
+                          ? "border-[var(--color-ring)]"
+                          : "border-[var(--color-border)]",
+                      ].join(" ")}
+                    >
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCurrentProviderIdState(provider.id)}
+                          className="min-w-0 text-left"
+                        >
+                          <div className="truncate text-sm font-semibold">
+                            {provider.name}
+                          </div>
+                          <div className="truncate text-xs text-[var(--color-foreground-muted)]">
+                            {provider.baseUrl}
+                          </div>
+                        </button>
+
+                        <div className="flex items-center gap-2">
+                          {currentProviderId === provider.id && (
+                            <span className="rounded-full bg-emerald-500 px-2 py-1 text-xs text-white">
+                              当前
+                            </span>
+                          )}
+
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => deleteProvider(provider.id)}
+                            className="text-[var(--color-foreground-muted)] hover:text-[var(--color-destructive)]"
+                          >
+                            <Trash2 size={15} />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3">
+                        <label className="block">
+                          <div className="mb-1 text-xs text-[var(--color-foreground-muted)]">
+                            服务商名称
+                          </div>
+                          <input
+                            value={provider.name}
+                            onChange={(event) =>
+                              updateProvider(provider.id, {
+                                name: event.target.value,
+                              })
+                            }
+                            className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                          />
+                        </label>
+
+                        <label className="block">
+                          <div className="mb-1 text-xs text-[var(--color-foreground-muted)]">
+                            Base URL
+                          </div>
+                          <input
+                            value={provider.baseUrl}
+                            onChange={(event) =>
+                              updateProvider(provider.id, {
+                                baseUrl: event.target.value,
+                              })
+                            }
+                            placeholder="https://api.openai.com/v1"
+                            className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                          />
+                        </label>
+
+                        <label className="block">
+                          <div className="mb-1 text-xs text-[var(--color-foreground-muted)]">
+                            API Key
+                          </div>
+                          <input
+                            value={provider.apiKey}
+                            onChange={(event) =>
+                              updateProvider(provider.id, {
+                                apiKey: event.target.value,
+                              })
+                            }
+                            placeholder="sk-..."
+                            className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-6 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
+                  <div className="mb-3 text-sm font-semibold">添加服务商</div>
+
+                  <div className="grid gap-3">
+                    <input
+                      value={newProviderName}
+                      onChange={(event) => setNewProviderName(event.target.value)}
+                      placeholder="服务商名称，例如 SiliconFlow"
+                      className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                    />
+
+                    <input
+                      value={newProviderBaseUrl}
+                      onChange={(event) =>
+                        setNewProviderBaseUrl(event.target.value)
+                      }
+                      placeholder="Base URL，例如 https://api.siliconflow.cn/v1"
+                      className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                    />
+
+                    <input
+                      value={newProviderApiKey}
+                      onChange={(event) =>
+                        setNewProviderApiKey(event.target.value)
+                      }
+                      placeholder="API Key"
+                      className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                    />
+                  </div>
+
+                  <Button className="mt-3" onClick={addProvider}>
+                    <Plus size={16} />
+                    添加服务商
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {tab === "model" && (
               <div className="mx-auto max-w-3xl">
-                <Field
-                  label="API Key"
-                  value={apiKeyValue}
-                  onChange={setApiKeyValue}
-                  placeholder="sk-..."
-                />
+                <div className="mb-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
+                  <div className="text-sm font-semibold">模型设置</div>
+                  <p className="mt-2 text-sm text-[var(--color-foreground-muted)]">
+                    每个模型必须绑定一个 API 服务商。发送消息时会自动使用模型对应的服务商。
+                  </p>
+                </div>
 
-                <Field
-                  label="Base URL"
-                  value={baseUrlValue}
-                  onChange={setBaseUrlValue}
-                  placeholder="https://api.openai.com/v1"
-                />
+                <div className="border-b border-[var(--color-border)] py-4">
+                  <div className="mb-2 text-sm font-medium">当前默认模型</div>
 
-                <Field
-                  label="默认模型"
-                  value={modelValue}
-                  onChange={setModelValue}
-                  placeholder="gpt-4o-mini"
-                />
+                  <select
+                    value={modelValue}
+                    onChange={(event) => setModelValue(event.target.value)}
+                    className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                  >
+                    {models.map((model) => (
+                      <option key={model.id} value={model.model}>
+                        {model.name} · {getProviderName(model.providerId, providers)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="border-b border-[var(--color-border)] py-4">
+                  <div className="mb-3 text-sm font-medium">模型列表</div>
+
+                  <div className="space-y-3">
+                    {models.map((model) => (
+                      <div
+                        key={model.id}
+                        className={[
+                          "rounded-2xl border bg-[var(--color-card)] p-4",
+                          model.model === modelValue
+                            ? "border-[var(--color-ring)]"
+                            : "border-[var(--color-border)]",
+                        ].join(" ")}
+                      >
+                        <div className="mb-3 flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold">
+                              {model.name}
+                            </div>
+                            <div className="truncate text-xs text-[var(--color-foreground-muted)]">
+                              {model.model} ·{" "}
+                              {getProviderName(model.providerId, providers)}
+                            </div>
+                          </div>
+
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => deleteModel(model.id)}
+                            className="text-[var(--color-foreground-muted)] hover:text-[var(--color-destructive)]"
+                          >
+                            <Trash2 size={15} />
+                          </Button>
+                        </div>
+
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <input
+                            value={model.name}
+                            onChange={(event) =>
+                              updateModel(model.id, {
+                                name: event.target.value,
+                              })
+                            }
+                            placeholder="显示名称"
+                            className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                          />
+
+                          <input
+                            value={model.model}
+                            onChange={(event) =>
+                              updateModel(model.id, {
+                                model: event.target.value,
+                              })
+                            }
+                            placeholder="模型 ID"
+                            className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                          />
+
+                          <select
+                            value={model.providerId}
+                            onChange={(event) =>
+                              updateModel(model.id, {
+                                providerId: event.target.value,
+                              })
+                            }
+                            className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                          >
+                            {providers.map((provider) => (
+                              <option key={provider.id} value={provider.id}>
+                                {provider.name}
+                              </option>
+                            ))}
+                          </select>
+
+                          <div className="flex items-center gap-3">
+                            <label className="flex items-center gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(model.vision)}
+                                onChange={(event) =>
+                                  updateModel(model.id, {
+                                    vision: event.target.checked,
+                                  })
+                                }
+                              />
+                              图片
+                            </label>
+
+                            <label className="flex items-center gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(model.reasoning)}
+                                onChange={(event) =>
+                                  updateModel(model.id, {
+                                    reasoning: event.target.checked,
+                                  })
+                                }
+                              />
+                              思考
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-b border-[var(--color-border)] py-4">
+                  <div className="mb-3 text-sm font-medium">添加模型</div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <input
+                      value={newModelName}
+                      onChange={(event) => setNewModelName(event.target.value)}
+                      placeholder="显示名称，例如 Qwen Max"
+                      className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                    />
+
+                    <input
+                      value={newModelId}
+                      onChange={(event) => setNewModelId(event.target.value)}
+                      placeholder="模型 ID，例如 qwen-max"
+                      className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                    />
+
+                    <select
+                      value={newModelProviderId}
+                      onChange={(event) =>
+                        setNewModelProviderId(event.target.value)
+                      }
+                      className="h-10 rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                    >
+                      {providers.map((provider) => (
+                        <option key={provider.id} value={provider.id}>
+                          {provider.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={newModelVision}
+                          onChange={(event) =>
+                            setNewModelVision(event.target.checked)
+                          }
+                        />
+                        支持图片
+                      </label>
+
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={newModelReasoning}
+                          onChange={(event) =>
+                            setNewModelReasoning(event.target.checked)
+                          }
+                        />
+                        支持思考
+                      </label>
+                    </div>
+                  </div>
+
+                  <Button className="mt-3" onClick={addModel}>
+                    <Plus size={16} />
+                    添加模型
+                  </Button>
+                </div>
 
                 <Field
                   label="模型温度 temperature"
@@ -327,7 +825,7 @@ export function SettingsPanel({ open, onClose }: Props) {
                 <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
                   <div className="text-sm font-semibold">常规设置</div>
                   <p className="mt-2 text-sm text-[var(--color-foreground-muted)]">
-                    后续可以在这里加入语言、启动页、默认行为、自动标题等功能。
+                    后续可以加入自动标题、发送快捷键、启动行为等功能。
                   </p>
                 </div>
               </div>
@@ -338,7 +836,7 @@ export function SettingsPanel({ open, onClose }: Props) {
                 <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
                   <div className="text-sm font-semibold">显示设置</div>
                   <p className="mt-2 text-sm text-[var(--color-foreground-muted)]">
-                    后续可以在这里加入主题、字体大小、消息宽度、代码高亮等功能。
+                    后续可以加入字体大小、消息宽度、代码高亮等功能。
                   </p>
                 </div>
               </div>

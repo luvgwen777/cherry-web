@@ -1,10 +1,9 @@
 import {
-  getApiKey,
-  getBaseUrl,
   getContextCount,
+  getCurrentModelOption,
+  getCurrentProvider,
   getEnableReasoning,
   getMaxTokens,
-  getModel,
   getStreamOutput,
   getTemperature,
   getTopP,
@@ -96,32 +95,84 @@ function normalizeUsage(usage: any): TokenUsage {
   }
 }
 
+function shouldSendTemperature(model: string) {
+  const lower = model.toLowerCase()
+
+  if (lower.includes("o1") || lower.includes("o3") || lower.includes("o4")) {
+    return false
+  }
+
+  return true
+}
+
+function shouldSendTopP(model: string) {
+  const lower = model.toLowerCase()
+
+  if (lower.includes("o1") || lower.includes("o3") || lower.includes("o4")) {
+    return false
+  }
+
+  return true
+}
+
 export async function requestAI(options: RequestAIOptions) {
-  const apiKey = getApiKey()
-  const baseUrl = getBaseUrl().replace(/\/$/, "")
-  const model = getModel()
+  const provider = getCurrentProvider()
+  const currentModel = getCurrentModelOption()
   const stream = getStreamOutput()
   const enableReasoning = getEnableReasoning()
 
+  if (!provider) {
+    throw new Error("你还没有配置 API 服务商。请打开设置添加服务商。")
+  }
+
+  if (!currentModel) {
+    throw new Error("你还没有配置模型。请打开设置添加模型。")
+  }
+
+  const apiKey = provider.apiKey
+  const baseUrl = provider.baseUrl.replace(/\/$/, "")
+  const model = currentModel.model
+
   if (!apiKey) {
-    throw new Error("你还没有设置 API Key。请点击右上角设置按钮填写。")
+    throw new Error(`服务商「${provider.name}」还没有填写 API Key。`)
+  }
+
+  if (!baseUrl) {
+    throw new Error(`服务商「${provider.name}」还没有填写 Base URL。`)
+  }
+
+  const hasImage = options.messages.some(
+    (message) => message.images && message.images.length > 0,
+  )
+
+  if (hasImage && !currentModel.vision) {
+    throw new Error(
+      `当前模型「${currentModel.name}」未标记为支持图片。请到 设置 → 模型设置 勾选“图片”，或切换到支持图片的模型。`,
+    )
+  }
+
+  if (enableReasoning && !currentModel.reasoning) {
+    throw new Error(
+      `当前模型「${currentModel.name}」未标记为支持思考。请到 设置 → 模型设置 勾选“思考”，或关闭“开启思考”。`,
+    )
   }
 
   const body: Record<string, any> = {
     model,
     messages: buildApiMessages(options.messages),
-    temperature: getTemperature(),
-    top_p: getTopP(),
     max_tokens: getMaxTokens(),
     stream,
   }
 
-  /**
-   * 有些 OpenAI 兼容接口支持 reasoning_effort。
-   * 不支持的接口可能会报错。
-   * 如果你的接口报“不支持 reasoning_effort”，就在设置里关闭“开启思考”。
-   */
-  if (enableReasoning) {
+  if (shouldSendTemperature(model)) {
+    body.temperature = getTemperature()
+  }
+
+  if (shouldSendTopP(model)) {
+    body.top_p = getTopP()
+  }
+
+  if (enableReasoning && currentModel.reasoning) {
     body.reasoning_effort = "medium"
   }
 
@@ -136,7 +187,10 @@ export async function requestAI(options: RequestAIOptions) {
 
   if (!response.ok) {
     const text = await response.text()
-    throw new Error(text || "请求失败")
+
+    throw new Error(
+      `服务商：${provider.name}\n模型：${model}\n接口：${baseUrl}/chat/completions\n\n${text || "请求失败"}`,
+    )
   }
 
   if (!stream) {
