@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import {
   Menu,
   Moon,
@@ -10,6 +10,9 @@ import {
   Trash2,
   X,
   Plug,
+  Search,
+  Download,
+  FileText,
 } from "lucide-react"
 import { Button } from "./components/Button"
 import { Composer } from "./components/Composer"
@@ -19,7 +22,7 @@ import { SkillsPanel } from "./components/SkillsPanel"
 import { MCPPanel } from "./components/MCPPanel"
 import { ModelSelector } from "./components/ModelSelector"
 import { useChatStore } from "./store"
-import type { Conversation } from "./types"
+import type { ChatMessage, Conversation } from "./types"
 
 function formatTime(timestamp: number) {
   const date = new Date(timestamp)
@@ -49,6 +52,7 @@ function ConversationItem({
   onClick,
   onRename,
   onDelete,
+  onExport,
 }: {
   conversation: Conversation
   active: boolean
@@ -56,6 +60,7 @@ function ConversationItem({
   onClick: () => void
   onRename: () => void
   onDelete: () => void
+  onExport: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -92,7 +97,7 @@ function ConversationItem({
       </button>
 
       {menuOpen && (
-        <div className="absolute right-2 top-10 z-20 w-32 rounded-xl border border-[var(--color-border)] bg-[var(--color-popover)] p-1 shadow-md">
+        <div className="absolute right-2 top-10 z-20 w-40 rounded-xl border border-[var(--color-border)] bg-[var(--color-popover)] p-1 shadow-md">
           <button
             type="button"
             onClick={() => {
@@ -103,6 +108,18 @@ function ConversationItem({
           >
             <PenLine size={14} />
             重命名
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setMenuOpen(false)
+              onExport()
+            }}
+            className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-sm hover:bg-[var(--color-accent)]"
+          >
+            <Download size={14} />
+            导出对话
           </button>
 
           <button
@@ -126,10 +143,12 @@ function Sidebar({
   mobile = false,
   onClose,
   onOpenSkills,
+  onExportConversation,
 }: {
   mobile?: boolean
   onClose?: () => void
   onOpenSkills: () => void
+  onExportConversation: (id: string) => void
 }) {
   const {
     conversations,
@@ -207,6 +226,9 @@ function Sidebar({
                 renameConversation(conversation.id, title)
               }
             }}
+            onExport={() => {
+              onExportConversation(conversation.id)
+            }}
             onDelete={() => {
               if (window.confirm(`删除「${conversation.title}」？`)) {
                 deleteConversation(conversation.id)
@@ -224,22 +246,79 @@ function Sidebar({
 }
 
 export default function App() {
-  const { messages, clearMessages, loading } = useChatStore()
+  const {
+    messages,
+    clearMessages,
+    loading,
+    sendUserMessage,
+    conversations,
+    messagesByConversationId,
+    currentConversationId,
+  } = useChatStore()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [skillsOpen, setSkillsOpen] = useState(false)
   const [mcpOpen, setMcpOpen] = useState(false)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [showSearch, setShowSearch] = useState(false)
 
   function toggleDark() {
     document.documentElement.classList.toggle("dark")
   }
 
+  function exportConversation(conversationId: string) {
+    const conversation = conversations.find((c) => c.id === conversationId)
+    const convMessages = messagesByConversationId[conversationId] || []
+
+    if (!conversation) return
+
+    const content = [
+      `# ${conversation.title}`,
+      ``,
+      `导出时间: ${new Date().toLocaleString("zh-CN")}`,
+      ``,
+      `---`,
+      ``,
+      ...convMessages.map((msg) =>
+        [
+          `## ${msg.role === "user" ? "用户" : "AI"}`,
+          ``,
+          msg.content,
+          ``,
+        ].join("\n"),
+      ),
+    ].join("\n")
+
+    const blob = new Blob([content], { type: "text/markdown" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `${conversation.title}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function handleResend(content: string) {
+    sendUserMessage(content)
+  }
+
+  const filteredMessages = useMemo(() => {
+    if (!searchQuery.trim()) return messages
+    const query = searchQuery.toLowerCase()
+    return messages.filter((msg) =>
+      msg.content?.toLowerCase().includes(query),
+    )
+  }, [messages, searchQuery])
+
   return (
     <>
       <div className="flex h-[100dvh] overflow-hidden bg-[var(--color-background)] text-[var(--color-foreground)]">
         <div className="hidden lg:block">
-          <Sidebar onOpenSkills={() => setSkillsOpen(true)} />
+          <Sidebar
+            onOpenSkills={() => setSkillsOpen(true)}
+            onExportConversation={exportConversation}
+          />
         </div>
 
         <main className="flex min-w-0 flex-1 flex-col">
@@ -256,7 +335,12 @@ export default function App() {
                 </Button>
 
                 <div className="hidden sm:block">
-                  <h1 className="truncate text-sm font-medium">新对话</h1>
+                  <h1 className="truncate text-sm font-medium">
+                    {
+                      conversations.find((c) => c.id === currentConversationId)
+                        ?.title || "新对话"
+                    }
+                  </h1>
 
                   {loading && (
                     <div className="text-xs text-[var(--color-foreground-muted)]">
@@ -269,6 +353,25 @@ export default function App() {
               </div>
 
               <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setShowSearch(!showSearch)}
+                >
+                  <Search size={17} />
+                </Button>
+
+                {messages.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => exportConversation(currentConversationId)}
+                    disabled={loading}
+                  >
+                    <Download size={17} />
+                  </Button>
+                )}
+
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -307,13 +410,51 @@ export default function App() {
                 </Button>
               </div>
             </div>
+
+            {showSearch && (
+              <div className="border-t border-[var(--color-border)] p-2">
+                <input
+                  type="text"
+                  placeholder="搜索消息..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                  autoFocus
+                />
+              </div>
+            )}
           </header>
 
           <section className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
             <div className="mx-auto flex max-w-3xl flex-col gap-4">
-              {messages.map((message) => (
-                <MessageBubble key={message.id} message={message} />
-              ))}
+              {filteredMessages.length > 0 ? (
+                filteredMessages.map((message) => (
+                  <MessageBubble
+                    key={message.id}
+                    message={message}
+                    onResend={
+                      message.role === "user" ? handleResend : undefined
+                    }
+                  />
+                ))
+              ) : searchQuery.trim() ? (
+                <div className="flex flex-col items-center justify-center py-10 text-center">
+                  <Search size={40} className="mb-2 text-[var(--color-foreground-muted)]" />
+                  <p className="text-sm text-[var(--color-foreground-muted)]">
+                    未找到匹配的消息
+                  </p>
+                </div>
+              ) : (
+                messages.map((message) => (
+                  <MessageBubble
+                    key={message.id}
+                    message={message}
+                    onResend={
+                      message.role === "user" ? handleResend : undefined
+                    }
+                  />
+                ))
+              )}
             </div>
           </section>
 
@@ -328,6 +469,7 @@ export default function App() {
               mobile
               onClose={() => setMobileSidebarOpen(false)}
               onOpenSkills={() => setSkillsOpen(true)}
+              onExportConversation={exportConversation}
             />
           </div>
 
