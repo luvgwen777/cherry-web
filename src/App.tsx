@@ -9,12 +9,14 @@ import {
   Sparkles,
   Trash2,
   X,
+  Plug,
 } from "lucide-react"
 import { Button } from "./components/Button"
 import { Composer } from "./components/Composer"
 import { MessageBubble } from "./components/MessageBubble"
 import { SettingsPanel } from "./components/SettingsPanel"
 import { SkillsPanel } from "./components/SkillsPanel"
+import { MCPPanel } from "./components/MCPPanel"
 import { ModelSelector } from "./components/ModelSelector"
 import { useChatStore } from "./store"
 import type { Conversation } from "./types"
@@ -226,6 +228,7 @@ export default function App() {
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [skillsOpen, setSkillsOpen] = useState(false)
+  const [mcpOpen, setMcpOpen] = useState(false)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   function toggleDark() {
@@ -266,6 +269,14 @@ export default function App() {
               </div>
 
               <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setMcpOpen(true)}
+                >
+                  <Plug size={17} />
+                </Button>
+
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -333,6 +344,8 @@ export default function App() {
       />
 
       <SkillsPanel open={skillsOpen} onClose={() => setSkillsOpen(false)} />
+
+      <MCPPanel open={mcpOpen} onClose={() => setMcpOpen(false)} />
     </>
   )
 }
