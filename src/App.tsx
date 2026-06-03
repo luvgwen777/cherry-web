@@ -1,8 +1,8 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import {
   Menu,
   Moon,
-  MoreHorizontal,
+  MoreVertical,
   PenLine,
   Plus,
   Settings,
@@ -13,6 +13,12 @@ import {
   Search,
   Download,
   LogOut,
+  Copy,
+  MessageSquarePlus,
+  Maximize2,
+  Minimize2,
+  Sun,
+  Info,
 } from "lucide-react"
 import { Button } from "./components/Button"
 import { Composer } from "./components/Composer"
@@ -269,6 +275,10 @@ export default function App() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [showSearch, setShowSearch] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [showAbout, setShowAbout] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const demoKeys = [
     "CHERRY-2024-ABC",
@@ -280,6 +290,25 @@ export default function App() {
 
   function toggleDark() {
     document.documentElement.classList.toggle("dark")
+  }
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen()
+      setIsFullscreen(true)
+    } else {
+      document.exitFullscreen()
+      setIsFullscreen(false)
+    }
+  }
+
+  function copyAllMessages() {
+    const content = messages
+      .map(msg => `${msg.role === "user" ? "用户" : "AI"}: ${msg.content}`)
+      .join("\n\n")
+    navigator.clipboard.writeText(content).then(() => {
+      alert("已复制所有消息到剪贴板！")
+    })
   }
 
   function exportConversation(conversationId: string) {
@@ -355,6 +384,24 @@ export default function App() {
   const copyToClipboard = (key) => {
     navigator.clipboard.writeText(key).catch(() => {})
   }
+
+  // 点击外部关闭菜单
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(event.target as Node)
+      ) {
+        setMenuOpen(false)
+      }
+    }
+
+    if (menuOpen) {
+      document.addEventListener("mousedown", handleClickOutside)
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside)
+    }
+  }, [menuOpen])
 
   if (!isLoggedIn) {
     return (
@@ -503,25 +550,16 @@ export default function App() {
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => setShowSearch(!showSearch)}
+                  title="搜索消息"
                 >
                   <Search size={17} />
                 </Button>
-
-                {messages.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => exportConversation(currentConversationId)}
-                    disabled={loading}
-                  >
-                    <Download size={17} />
-                  </Button>
-                )}
 
                 <Button
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => setMcpOpen(true)}
+                  title="MCP 工具"
                 >
                   <Plug size={17} />
                 </Button>
@@ -530,38 +568,132 @@ export default function App() {
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => setSkillsOpen(true)}
+                  title="技能"
                 >
                   <Sparkles size={17} />
                 </Button>
 
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => setSettingsOpen(true)}
-                >
-                  <Settings size={17} />
-                </Button>
-
-                <Button variant="ghost" size="icon-sm" onClick={toggleDark}>
+                <Button variant="ghost" size="icon-sm" onClick={toggleDark} title="切换主题">
                   <Moon size={17} />
                 </Button>
 
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={clearMessages}
-                  disabled={loading}
-                >
-                  <Trash2 size={17} />
-                </Button>
+                <div className="relative" ref={menuRef}>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => setMenuOpen(!menuOpen)}
+                    title="更多选项"
+                  >
+                    <MoreVertical size={17} />
+                  </Button>
 
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={handleLogout}
-                >
-                  <LogOut size={17} />
-                </Button>
+                  {menuOpen && (
+                    <div className="absolute right-0 top-10 z-50 w-56 rounded-xl border border-[var(--color-border)] bg-[var(--color-popover)] p-1 shadow-xl">
+                      {messages.length > 0 && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              copyAllMessages()
+                              setMenuOpen(false)
+                            }}
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-[var(--color-accent)]"
+                          >
+                            <Copy size={16} />
+                            复制全部消息
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              exportConversation(currentConversationId)
+                              setMenuOpen(false)
+                            }}
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-[var(--color-accent)]"
+                          >
+                            <Download size={16} />
+                            导出对话
+                          </button>
+                        </>
+                      )}
+
+                      <div className="my-1 h-px bg-[var(--color-border)]"></div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          toggleFullscreen()
+                          setMenuOpen(false)
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-[var(--color-accent)]"
+                      >
+                        {isFullscreen ? (
+                          <Minimize2 size={16} />
+                        ) : (
+                          <Maximize2 size={16} />
+                        )}
+                        {isFullscreen ? "退出全屏" : "全屏模式"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSettingsOpen(true)
+                          setMenuOpen(false)
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-[var(--color-accent)]"
+                      >
+                        <Settings size={16} />
+                        设置
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAbout(true)
+                          setMenuOpen(false)
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-[var(--color-accent)]"
+                      >
+                        <Info size={16} />
+                        关于
+                      </button>
+
+                      <div className="my-1 h-px bg-[var(--color-border)]"></div>
+
+                      {messages.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm("确定要清空当前对话的消息吗？")) {
+                              clearMessages()
+                              setMenuOpen(false)
+                            }
+                          }}
+                          disabled={loading}
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--color-destructive)] hover:bg-[var(--color-accent)]"
+                        >
+                          <Trash2 size={16} />
+                          清空对话
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm("确定要登出吗？")) {
+                            clearAuth()
+                            setIsLoggedIn(false)
+                            setMenuOpen(false)
+                          }
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--color-destructive)] hover:bg-[var(--color-accent)]"
+                      >
+                        <LogOut size={16} />
+                        登出
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -642,6 +774,67 @@ export default function App() {
       <SkillsPanel open={skillsOpen} onClose={() => setSkillsOpen(false)} />
 
       <MCPPanel open={mcpOpen} onClose={() => setMcpOpen(false)} />
+
+      {/* 关于对话框 */}
+      {showAbout && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold">关于 Cherry Web</h2>
+              <button
+                type="button"
+                onClick={() => setShowAbout(false)}
+                className="rounded-lg p-1 hover:bg-[var(--color-accent)]"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="text-center">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600">
+                  <span className="text-2xl">🍒</span>
+                </div>
+                <h3 className="text-lg font-semibold">Cherry Web</h3>
+                <p className="text-sm text-[var(--color-foreground-muted)]">
+                  智能对话助手
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-[var(--color-border)] p-4 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-sm text-[var(--color-foreground-muted)]">版本</span>
+                  <span className="text-sm font-medium">1.0.0</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-[var(--color-foreground-muted)]">更新日期</span>
+                  <span className="text-sm font-medium">2026-06-03</span>
+                </div>
+              </div>
+
+              <div className="text-sm text-[var(--color-foreground-muted)]">
+                <p className="mb-2">✨ 功能特性：</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>支持多模型对话</li>
+                  <li>智能技能集成</li>
+                  <li>MCP 工具扩展</li>
+                  <li>专属卡密验证</li>
+                  <li>对话导出与搜索</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="mt-6 flex gap-2">
+              <Button
+                className="flex-1"
+                onClick={() => setShowAbout(false)}
+              >
+                关闭
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
