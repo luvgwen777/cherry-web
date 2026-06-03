@@ -82,7 +82,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       const convId = state.currentConversationId
       const newMsgs = state.messages.map((m) =>
         m.id === id ? { ...m, ...updater(m) } : m
-      ))
+      )
       const newMap = { ...state.messagesByConversationId, [convId]: newMsgs }
       saveState({ conversations: state.conversations, currentConversationId: convId, messagesByConversationId: newMap })
       return { messages: newMsgs, messagesByConversationId: newMap }
@@ -110,7 +110,7 @@ export const useChatStore = create<ChatState>((set, get) => {
                 title: c.title === "新对话" && msg.role === "user" ? generateTitleFromMessage(msg) : c.title,
                 updatedAt: now,
               }
-            : c,
+            : c
         )
         saveState({ conversations: newConversations, currentConversationId: convId, messagesByConversationId: newMap })
         return { conversations: newConversations, messagesByConversationId: newMap, messages: newMsgs }
@@ -122,113 +122,114 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     updateUsage: (id, usage) => updateMessageWith(id, () => ({ usage })),
 
-  setLoading: (loading) => set({ loading }),
+    setLoading: (loading) => set({ loading }),
 
-  sendUserMessage: async (content, images) => {
-    const state = get()
-    if (state.loading) return
-    const previousMessages = [...state.messages]
+    sendUserMessage: async (content, images) => {
+      const state = get()
+      if (state.loading) return
+      const previousMessages = [...state.messages]
 
-    const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content,
-      images,
-      createdAt: Date.now(),
-    }
-    const assistantId = crypto.randomUUID()
-    const abortController = new AbortController()
-
-    get().addMessage(userMsg)
-    get().addMessage({ id: assistantId, role: "assistant", content: "", reasoningContent: "", createdAt: Date.now() })
-
-    set({ loading: true, abortController })
-    try {
-      const finalContent = await requestAI({
-        messages: [...previousMessages, userMsg],
-        onContent: (c) => get().updateMessage(assistantId, c),
-        onReasoning: (r) => get().updateReasoning(assistantId, r),
-        onUsage: (u) => get().updateUsage(assistantId, u),
-        signal: abortController.signal,
-      })
-      get().updateMessage(assistantId, finalContent)
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        get().updateMessage(assistantId, "已停止生成")
-      } else {
-        const msg = error instanceof Error ? error.message : "请求失败"
-        get().updateMessage(assistantId, msg)
+      const userMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "user",
+        content,
+        images,
+        createdAt: Date.now(),
       }
-    } finally {
-      set({ loading: false, abortController: null })
-    }
-  },
+      const assistantId = crypto.randomUUID()
+      const abortController = new AbortController()
 
-  stopGeneration: () => {
-    const state = get()
-    if (state.abortController) {
-      state.abortController.abort()
-    }
-  },
+      get().addMessage(userMsg)
+      get().addMessage({ id: assistantId, role: "assistant", content: "", reasoningContent: "", createdAt: Date.now() })
 
-  createConversation: () =>
-    set((state) => {
-      const convId = crypto.randomUUID()
-      const newConv: Conversation = { id: convId, title: "新对话", createdAt: Date.now(), updatedAt: Date.now() }
-      const newMsgs = [createWelcomeMessage()]
-      const newConversations = [newConv, ...state.conversations]
-      const newMap = { ...state.messagesByConversationId, [convId]: newMsgs }
-      saveState({ conversations: newConversations, currentConversationId: convId, messagesByConversationId: newMap })
-      return { conversations: newConversations, currentConversationId: convId, messagesByConversationId: newMap, messages: newMsgs }
-    }),
-
-  switchConversation: (id) =>
-    set((state) => {
-      if (state.loading) return state
-      const msgs = state.messagesByConversationId[id] || []
-      saveState({ conversations: state.conversations, currentConversationId: id, messagesByConversationId: state.messagesByConversationId })
-      return { currentConversationId: id, messages: msgs }
-    }),
-
-  deleteConversation: (id) =>
-    set((state) => {
-      if (state.loading) return state
-      const remaining = state.conversations.filter((c) => c.id !== id)
-      const newMap = { ...state.messagesByConversationId }
-      delete newMap[id]
-      if (remaining.length === 0) {
-        const fresh = createDefaultState()
-        saveState(fresh)
-        return { conversations: fresh.conversations, currentConversationId: fresh.currentConversationId, messagesByConversationId: fresh.messagesByConversationId, messages: fresh.messagesByConversationId[fresh.currentConversationId] }
+      set({ loading: true, abortController })
+      try {
+        const finalContent = await requestAI({
+          messages: [...previousMessages, userMsg],
+          onContent: (c) => get().updateMessage(assistantId, c),
+          onReasoning: (r) => get().updateReasoning(assistantId, r),
+          onUsage: (u) => get().updateUsage(assistantId, u),
+          signal: abortController.signal,
+        })
+        get().updateMessage(assistantId, finalContent)
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          get().updateMessage(assistantId, "已停止生成")
+        } else {
+          const msg = error instanceof Error ? error.message : "请求失败"
+          get().updateMessage(assistantId, msg)
+        }
+      } finally {
+        set({ loading: false, abortController: null })
       }
-      const nextId = state.currentConversationId === id ? remaining[0].id : state.currentConversationId
-      saveState({ conversations: remaining, currentConversationId: nextId, messagesByConversationId: newMap })
-      return { conversations: remaining, currentConversationId: nextId, messagesByConversationId: newMap, messages: newMap[nextId] || [] }
-    }),
+    },
 
-  renameConversation: (id, title) =>
-    set((state) => {
-      const finalTitle = title.trim() || "未命名对话"
-      const newConversations = state.conversations.map((c) =>
-        c.id === id ? { ...c, title: finalTitle, updatedAt: Date.now() } : c
-      )
-      saveState({ conversations: newConversations, currentConversationId: state.currentConversationId, messagesByConversationId: state.messagesByConversationId })
-      return { conversations: newConversations }
-    }),
+    stopGeneration: () => {
+      const state = get()
+      if (state.abortController) {
+        state.abortController.abort()
+      }
+    },
 
-  clearMessages: () =>
-    set((state) => {
-      if (state.loading) return state
-      const convId = state.currentConversationId
-      const newMsgs = [createWelcomeMessage()]
-      const newMap = { ...state.messagesByConversationId, [convId]: newMsgs }
-      const newConversations = state.conversations.map((c) =>
-        c.id === convId ? { ...c, title: "新对话", updatedAt: Date.now() } : c
-      )
-      saveState({ conversations: newConversations, currentConversationId: convId, messagesByConversationId: newMap })
-      return { conversations: newConversations, messagesByConversationId: newMap, messages: newMsgs }
-    }),
-}))
+    createConversation: () =>
+      set((state) => {
+        const convId = crypto.randomUUID()
+        const newConv: Conversation = { id: convId, title: "新对话", createdAt: Date.now(), updatedAt: Date.now() }
+        const newMsgs = [createWelcomeMessage()]
+        const newConversations = [newConv, ...state.conversations]
+        const newMap = { ...state.messagesByConversationId, [convId]: newMsgs }
+        saveState({ conversations: newConversations, currentConversationId: convId, messagesByConversationId: newMap })
+        return { conversations: newConversations, currentConversationId: convId, messagesByConversationId: newMap, messages: newMsgs }
+      }),
+
+    switchConversation: (id) =>
+      set((state) => {
+        if (state.loading) return state
+        const msgs = state.messagesByConversationId[id] || []
+        saveState({ conversations: state.conversations, currentConversationId: id, messagesByConversationId: state.messagesByConversationId })
+        return { currentConversationId: id, messages: msgs }
+      }),
+
+    deleteConversation: (id) =>
+      set((state) => {
+        if (state.loading) return state
+        const remaining = state.conversations.filter((c) => c.id !== id)
+        const newMap = { ...state.messagesByConversationId }
+        delete newMap[id]
+        if (remaining.length === 0) {
+          const fresh = createDefaultState()
+          saveState(fresh)
+          return { conversations: fresh.conversations, currentConversationId: fresh.currentConversationId, messagesByConversationId: fresh.messagesByConversationId, messages: fresh.messagesByConversationId[fresh.currentConversationId] }
+        }
+        const nextId = state.currentConversationId === id ? remaining[0].id : state.currentConversationId
+        saveState({ conversations: remaining, currentConversationId: nextId, messagesByConversationId: newMap })
+        return { conversations: remaining, currentConversationId: nextId, messagesByConversationId: newMap, messages: newMap[nextId] || [] }
+      }),
+
+    renameConversation: (id, title) =>
+      set((state) => {
+        const finalTitle = title.trim() || "未命名对话"
+        const newConversations = state.conversations.map((c) =>
+          c.id === id ? { ...c, title: finalTitle, updatedAt: Date.now() } : c
+        )
+        saveState({ conversations: newConversations, currentConversationId: state.currentConversationId, messagesByConversationId: state.messagesByConversationId })
+        return { conversations: newConversations }
+      }),
+
+    clearMessages: () =>
+      set((state) => {
+        if (state.loading) return state
+        const convId = state.currentConversationId
+        const newMsgs = [createWelcomeMessage()]
+        const newMap = { ...state.messagesByConversationId, [convId]: newMsgs }
+        const newConversations = state.conversations.map((c) =>
+          c.id === convId ? { ...c, title: "新对话", updatedAt: Date.now() } : c
+        )
+        saveState({ conversations: newConversations, currentConversationId: convId, messagesByConversationId: newMap })
+        return { conversations: newConversations, messagesByConversationId: newMap, messages: newMsgs }
+      }),
+  }
+})
 
 export async function fileToImageAttachment(file: File): Promise<ImageAttachment> {
   return new Promise((resolve, reject) => {
