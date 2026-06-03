@@ -12,7 +12,7 @@ import {
   Plug,
   Search,
   Download,
-  FileText,
+  LogOut,
 } from "lucide-react"
 import { Button } from "./components/Button"
 import { Composer } from "./components/Composer"
@@ -22,6 +22,7 @@ import { SkillsPanel } from "./components/SkillsPanel"
 import { MCPPanel } from "./components/MCPPanel"
 import { ModelSelector } from "./components/ModelSelector"
 import { useChatStore } from "./store"
+import { isAuthenticated, clearAuth, getAuthState, verifyCardKey, setAuthState } from "./auth"
 import type { ChatMessage, Conversation } from "./types"
 
 function formatTime(timestamp: number) {
@@ -256,12 +257,26 @@ export default function App() {
     currentConversationId,
   } = useChatStore()
 
+  const [isLoggedIn, setIsLoggedIn] = useState(isAuthenticated())
+  const [cardKey, setCardKey] = useState("")
+  const [error, setError] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [showKey, setShowKey] = useState(false)
+  const [showDemoKeys, setShowDemoKeys] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [skillsOpen, setSkillsOpen] = useState(false)
   const [mcpOpen, setMcpOpen] = useState(false)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [showSearch, setShowSearch] = useState(false)
+
+  const demoKeys = [
+    "CHERRY-2024-ABC",
+    "CHERRY-2024-XYZ",
+    "CHERRY-2024-123",
+    "CHERRY-WEB-2024",
+    "DEMO-KEY-1234",
+  ]
 
   function toggleDark() {
     document.documentElement.classList.toggle("dark")
@@ -303,6 +318,13 @@ export default function App() {
     sendUserMessage(content)
   }
 
+  function handleLogout() {
+    if (window.confirm("确定要登出吗？")) {
+      clearAuth()
+      setIsLoggedIn(false)
+    }
+  }
+
   const filteredMessages = useMemo(() => {
     if (!searchQuery.trim()) return messages
     const query = searchQuery.toLowerCase()
@@ -310,6 +332,130 @@ export default function App() {
       msg.content?.toLowerCase().includes(query),
     )
   }, [messages, searchQuery])
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    setError("")
+    setIsLoading(true)
+
+    setTimeout(() => {
+      const trimmedKey = cardKey.trim().toUpperCase()
+      
+      if (verifyCardKey(trimmedKey)) {
+        setAuthState(trimmedKey)
+        setIsLoading(false)
+        setIsLoggedIn(true)
+      } else {
+        setError("无效的卡密，请检查后重试")
+        setIsLoading(false)
+      }
+    }, 800)
+  }
+
+  const copyToClipboard = (key) => {
+    navigator.clipboard.writeText(key).catch(() => {})
+  }
+
+  if (!isLoggedIn) {
+    return (
+      <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 p-4">
+        <div className="w-full max-w-md">
+          <div className="rounded-2xl border border-white/20 bg-white/10 p-8 backdrop-blur-xl shadow-2xl">
+            <div className="mb-8 text-center">
+              <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-white/20">
+                <div className="h-10 w-10 text-white">🔐</div>
+              </div>
+              <h1 className="text-3xl font-bold text-white">Cherry Web</h1>
+              <p className="mt-2 text-white/80">
+                请输入您的专属卡密以继续使用
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="cardKey" className="mb-2 block text-sm font-medium text-white/90">
+                  🔑 专属卡密
+                </label>
+                <div className="relative">
+                  <input
+                    id="cardKey"
+                    type={showKey ? "text" : "password"}
+                    value={cardKey}
+                    onChange={(e) => setCardKey(e.target.value)}
+                    placeholder="请输入卡密 (如: CHERRY-XXXX-XXXX)"
+                    className="w-full rounded-xl border border-white/30 bg-white/10 px-4 py-3 text-white placeholder:text-white/50 outline-none focus:ring-2 focus:ring-white/50"
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey(!showKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/60 hover:text-white transition-colors"
+                  >
+                    {showKey ? "🙈" : "👁️"}
+                  </button>
+                </div>
+              </div>
+
+              {error && (
+                <div className="flex items-center gap-2 rounded-lg bg-red-500/20 border border-red-500/50 px-4 py-3 text-red-200">
+                  ❌ <span>{error}</span>
+                </div>
+              )}
+
+              <Button
+                type="submit"
+                disabled={isLoading}
+                className="mt-2 w-full bg-white text-indigo-700 hover:bg-white/90 font-semibold"
+              >
+                {isLoading ? "验证中..." : "验证卡密"}
+              </Button>
+            </form>
+
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={() => setShowDemoKeys(!showDemoKeys)}
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm text-white/80 hover:bg-white/20 transition-colors"
+              >
+                ✨ <span>{showDemoKeys ? "隐藏" : "显示"}演示卡密</span>
+              </button>
+
+              {showDemoKeys && (
+                <div className="mt-4 space-y-2">
+                  {demoKeys.map((key, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between rounded-lg bg-white/10 px-3 py-2 text-white/90"
+                    >
+                      <span className="font-mono text-sm">{key}</span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(key)}
+                        className="px-2 py-1 text-white/70 hover:text-white hover:bg-white/10 rounded"
+                      >
+                        📋
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 border-t border-white/20 pt-6 text-center text-sm text-white/60">
+              <p>卡密有效期：验证后可使用7天</p>
+              <p className="mt-1 text-xs text-white/50">
+                提示：演示卡密仅用于开发测试
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6 text-center text-white/40 text-xs">
+            <p>Cherry Web © 2024</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <>
@@ -407,6 +553,14 @@ export default function App() {
                   disabled={loading}
                 >
                   <Trash2 size={17} />
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={handleLogout}
+                >
+                  <LogOut size={17} />
                 </Button>
               </div>
             </div>
