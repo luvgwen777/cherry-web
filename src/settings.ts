@@ -442,6 +442,88 @@ export function setShowReasoning(value: boolean) {
   setBoolean("showReasoning", value)
 }
 
+// 常规设置
+export function getAutoGenerateTitle() {
+  return getBoolean("autoGenerateTitle", true)
+}
+
+export function setAutoGenerateTitle(value: boolean) {
+  setBoolean("autoGenerateTitle", value)
+}
+
+export function getSendWithEnter() {
+  return getBoolean("sendWithEnter", true)
+}
+
+export function setSendWithEnter(value: boolean) {
+  setBoolean("sendWithEnter", value)
+}
+
+export function getStartNewChat() {
+  return getBoolean("startNewChat", false)
+}
+
+export function setStartNewChat(value: boolean) {
+  setBoolean("startNewChat", value)
+}
+
+export function getUseSystemPrompt() {
+  return getBoolean("useSystemPrompt", false)
+}
+
+export function setUseSystemPrompt(value: boolean) {
+  setBoolean("useSystemPrompt", value)
+}
+
+export function getSystemPrompt() {
+  return getString("systemPrompt", "你是一个有帮助的助手。")
+}
+
+export function setSystemPrompt(value: string) {
+  setString("systemPrompt", value)
+}
+
+// 显示设置
+export function getFontSize() {
+  return getNumber("fontSize", 15)
+}
+
+export function setFontSize(value: number) {
+  setNumber("fontSize", value)
+}
+
+export function getMessageWidth() {
+  return getNumber("messageWidth", 88)
+}
+
+export function setMessageWidth(value: number) {
+  setNumber("messageWidth", value)
+}
+
+export function getShowMessageTime() {
+  return getBoolean("showMessageTime", false)
+}
+
+export function setShowMessageTime(value: boolean) {
+  setBoolean("showMessageTime", value)
+}
+
+export function getCodeTheme() {
+  return getString("codeTheme", "default")
+}
+
+export function setCodeTheme(value: string) {
+  setString("codeTheme", value)
+}
+
+export function getShowSidebar() {
+  return getBoolean("showSidebar", true)
+}
+
+export function setShowSidebar(value: boolean) {
+  setBoolean("showSidebar", value)
+}
+
 export function resetSettings() {
   localStorage.removeItem("apiKey")
   localStorage.removeItem("baseUrl")
@@ -453,6 +535,16 @@ export function resetSettings() {
   localStorage.removeItem("streamOutput")
   localStorage.removeItem("enableReasoning")
   localStorage.removeItem("showReasoning")
+  localStorage.removeItem("autoGenerateTitle")
+  localStorage.removeItem("sendWithEnter")
+  localStorage.removeItem("startNewChat")
+  localStorage.removeItem("useSystemPrompt")
+  localStorage.removeItem("systemPrompt")
+  localStorage.removeItem("fontSize")
+  localStorage.removeItem("messageWidth")
+  localStorage.removeItem("showMessageTime")
+  localStorage.removeItem("codeTheme")
+  localStorage.removeItem("showSidebar")
   localStorage.removeItem(PROVIDERS_KEY)
   localStorage.removeItem(MODELS_KEY)
   localStorage.removeItem(CURRENT_PROVIDER_KEY)

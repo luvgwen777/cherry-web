@@ -27,6 +27,16 @@ import {
   getStreamOutput,
   getTemperature,
   getTopP,
+  getAutoGenerateTitle,
+  getSendWithEnter,
+  getStartNewChat,
+  getUseSystemPrompt,
+  getSystemPrompt,
+  getFontSize,
+  getMessageWidth,
+  getShowMessageTime,
+  getCodeTheme,
+  getShowSidebar,
   removeModelOption,
   removeProviderOption,
   resetSettings,
@@ -41,6 +51,16 @@ import {
   setStreamOutput,
   setTemperature,
   setTopP,
+  setAutoGenerateTitle,
+  setSendWithEnter,
+  setStartNewChat,
+  setUseSystemPrompt,
+  setSystemPrompt,
+  setFontSize,
+  setMessageWidth,
+  setShowMessageTime,
+  setCodeTheme,
+  setShowSidebar,
   type ModelOption,
   type ProviderOption,
 } from "../settings"
@@ -120,6 +140,69 @@ function Field({
   )
 }
 
+function Slider({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  unit = "",
+}: {
+  label: string
+  value: number
+  onChange: (value: number) => void
+  min: number
+  max: number
+  step?: number
+  unit?: string
+}) {
+  return (
+    <div className="border-b border-[var(--color-border)] py-4">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-sm font-medium">{label}</div>
+        <div className="text-sm text-[var(--color-foreground-muted)]">
+          {value}{unit}
+        </div>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="w-full accent-[var(--color-primary)]"
+      />
+    </div>
+  )
+}
+
+function TextArea({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+}) {
+  return (
+    <label className="block border-b border-[var(--color-border)] py-4">
+      <div className="mb-2 text-sm font-medium">{label}</div>
+      <textarea
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+        rows={4}
+        className="w-full resize-none rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 py-2 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+      />
+    </label>
+  )
+}
+
 function getProviderName(providerId: string, providers: ProviderOption[]) {
   return providers.find((item) => item.id === providerId)?.name || "未知服务商"
 }
@@ -158,6 +241,40 @@ export function SettingsPanel({ open, onClose }: Props) {
   )
   const [showReasoningValue, setShowReasoningValue] = useState(
     getShowReasoning(),
+  )
+
+  // 常规设置
+  const [autoGenerateTitleValue, setAutoGenerateTitleValue] = useState(
+    getAutoGenerateTitle(),
+  )
+  const [sendWithEnterValue, setSendWithEnterValue] = useState(
+    getSendWithEnter(),
+  )
+  const [startNewChatValue, setStartNewChatValue] = useState(
+    getStartNewChat(),
+  )
+  const [useSystemPromptValue, setUseSystemPromptValue] = useState(
+    getUseSystemPrompt(),
+  )
+  const [systemPromptValue, setSystemPromptValue] = useState(
+    getSystemPrompt(),
+  )
+
+  // 显示设置
+  const [fontSizeValue, setFontSizeValue] = useState(
+    getFontSize(),
+  )
+  const [messageWidthValue, setMessageWidthValue] = useState(
+    getMessageWidth(),
+  )
+  const [showMessageTimeValue, setShowMessageTimeValue] = useState(
+    getShowMessageTime(),
+  )
+  const [codeThemeValue, setCodeThemeValue] = useState(
+    getCodeTheme(),
+  )
+  const [showSidebarValue, setShowSidebarValue] = useState(
+    getShowSidebar(),
   )
 
   if (!open) return null
@@ -202,6 +319,20 @@ export function SettingsPanel({ open, onClose }: Props) {
     setStreamOutput(streamValue)
     setEnableReasoning(enableReasoningValue)
     setShowReasoning(showReasoningValue)
+
+    // 常规设置
+    setAutoGenerateTitle(autoGenerateTitleValue)
+    setSendWithEnter(sendWithEnterValue)
+    setStartNewChat(startNewChatValue)
+    setUseSystemPrompt(useSystemPromptValue)
+    setSystemPrompt(systemPromptValue)
+
+    // 显示设置
+    setFontSize(Number(fontSizeValue))
+    setMessageWidth(Number(messageWidthValue))
+    setShowMessageTime(showMessageTimeValue)
+    setCodeTheme(codeThemeValue)
+    setShowSidebar(showSidebarValue)
 
     onClose()
   }
@@ -821,24 +952,107 @@ export function SettingsPanel({ open, onClose }: Props) {
             )}
 
             {tab === "general" && (
-              <div className="mx-auto max-w-3xl space-y-4">
+              <div className="mx-auto max-w-3xl">
                 <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
                   <div className="text-sm font-semibold">常规设置</div>
                   <p className="mt-2 text-sm text-[var(--color-foreground-muted)]">
-                    后续可以加入自动标题、发送快捷键、启动行为等功能。
+                    配置聊天行为和体验。
                   </p>
                 </div>
+
+                <RowSwitch
+                  title="自动生成标题"
+                  description="根据第一个用户消息自动生成对话标题。"
+                  checked={autoGenerateTitleValue}
+                  onChange={setAutoGenerateTitleValue}
+                />
+
+                <RowSwitch
+                  title="Enter 键发送"
+                  description="按下 Enter 发送消息，Shift + Enter 换行。"
+                  checked={sendWithEnterValue}
+                  onChange={setSendWithEnterValue}
+                />
+
+                <RowSwitch
+                  title="启动时新建对话"
+                  description="打开应用时自动创建一个新对话。"
+                  checked={startNewChatValue}
+                  onChange={setStartNewChatValue}
+                />
+
+                <RowSwitch
+                  title="使用系统提示词"
+                  description="为所有对话启用自定义系统提示词。"
+                  checked={useSystemPromptValue}
+                  onChange={setUseSystemPromptValue}
+                />
+
+                {useSystemPromptValue && (
+                  <TextArea
+                    label="系统提示词"
+                    value={systemPromptValue}
+                    onChange={setSystemPromptValue}
+                    placeholder="你是一个有帮助的助手。"
+                  />
+                )}
               </div>
             )}
 
             {tab === "display" && (
-              <div className="mx-auto max-w-3xl space-y-4">
+              <div className="mx-auto max-w-3xl">
                 <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
                   <div className="text-sm font-semibold">显示设置</div>
                   <p className="mt-2 text-sm text-[var(--color-foreground-muted)]">
-                    后续可以加入字体大小、消息宽度、代码高亮等功能。
+                    自定义界面外观和显示效果。
                   </p>
                 </div>
+
+                <Slider
+                  label="字体大小"
+                  value={fontSizeValue}
+                  onChange={setFontSizeValue}
+                  min={12}
+                  max={20}
+                  unit="px"
+                />
+
+                <Slider
+                  label="消息最大宽度"
+                  value={messageWidthValue}
+                  onChange={setMessageWidthValue}
+                  min={50}
+                  max={100}
+                  unit="%"
+                />
+
+                <RowSwitch
+                  title="显示消息时间"
+                  description="在每条消息旁显示发送时间。"
+                  checked={showMessageTimeValue}
+                  onChange={setShowMessageTimeValue}
+                />
+
+                <div className="border-b border-[var(--color-border)] py-4">
+                  <div className="mb-2 text-sm font-medium">代码主题</div>
+                  <select
+                    value={codeThemeValue}
+                    onChange={(event) => setCodeThemeValue(event.target.value)}
+                    className="h-10 w-full rounded-xl border border-[var(--color-input)] bg-[var(--color-background)] px-3 text-base outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+                  >
+                    <option value="default">默认主题</option>
+                    <option value="dark">深色主题</option>
+                    <option value="light">浅色主题</option>
+                    <option value="monokai">Monokai</option>
+                  </select>
+                </div>
+
+                <RowSwitch
+                  title="显示侧边栏"
+                  description="在桌面端显示对话列表侧边栏。"
+                  checked={showSidebarValue}
+                  onChange={setShowSidebarValue}
+                />
               </div>
             )}
 
