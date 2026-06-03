@@ -16,6 +16,7 @@ interface ChatState {
   messagesByConversationId: Record<string, ChatMessage[]>
   messages: ChatMessage[]
   loading: boolean
+  abortController: AbortController | null
 
   addMessage: (message: ChatMessage) => void
   updateMessage: (id: string, content: string) => void
@@ -24,6 +25,7 @@ interface ChatState {
   setLoading: (loading: boolean) => void
 
   sendUserMessage: (content: string, images?: ImageAttachment[]) => Promise<void>
+  stopGeneration: () => void
   createConversation: () => void
   switchConversation: (id: string) => void
   deleteConversation: (id: string) => void
@@ -73,59 +75,52 @@ function generateTitleFromMessage(msg: ChatMessage) {
 
 const initial = loadState()
 
-export const useChatStore = create<ChatState>((set, get) => ({
-  conversations: initial.conversations,
-  currentConversationId: initial.currentConversationId,
-  messagesByConversationId: initial.messagesByConversationId,
-  messages: initial.messagesByConversationId[initial.currentConversationId] || [],
-  loading: false,
-
-  addMessage: (msg) =>
+export const useChatStore = create<ChatState>((set, get) => {
+  const updateMessageWith = (
+    id: string, updater: (msg: ChatMessage) => Partial<ChatMessage>) =>
     set((state) => {
       const convId = state.currentConversationId
-      const old = state.messagesByConversationId[convId] || []
-      const newMsgs = [...old, msg]
-      const newMap = { ...state.messagesByConversationId, [convId]: newMsgs }
-      const now = Date.now()
-      const newConversations = state.conversations.map((c) =>
-        c.id === convId
-          ? {
-              ...c,
-              title: c.title === "新对话" && msg.role === "user" ? generateTitleFromMessage(msg) : c.title,
-              updatedAt: now,
-            }
-          : c
-      )
-      saveState({ conversations: newConversations, currentConversationId: convId, messagesByConversationId: newMap })
-      return { conversations: newConversations, messagesByConversationId: newMap, messages: newMsgs }
-    }),
-
-  updateMessage: (id, content) =>
-    set((state) => {
-      const convId = state.currentConversationId
-      const newMsgs = state.messages.map((m) => (m.id === id ? { ...m, content } : m))
+      const newMsgs = state.messages.map((m) =>
+        m.id === id ? { ...m, ...updater(m) } : m
+      ))
       const newMap = { ...state.messagesByConversationId, [convId]: newMsgs }
       saveState({ conversations: state.conversations, currentConversationId: convId, messagesByConversationId: newMap })
       return { messages: newMsgs, messagesByConversationId: newMap }
-    }),
+    })
 
-  updateReasoning: (id, reasoningContent) =>
-    set((state) => {
-      const convId = state.currentConversationId
-      const newMsgs = state.messages.map((m) => (m.id === id ? { ...m, reasoningContent } : m))
-      const newMap = { ...state.messagesByConversationId, [convId]: newMsgs }
-      saveState({ conversations: state.conversations, currentConversationId: convId, messagesByConversationId: newMap })
-      return { messages: newMsgs, messagesByConversationId: newMap }
-    }),
+  return {
+    conversations: initial.conversations,
+    currentConversationId: initial.currentConversationId,
+    messagesByConversationId: initial.messagesByConversationId,
+    messages: initial.messagesByConversationId[initial.currentConversationId] || [],
+    loading: false,
+    abortController: null,
 
-  updateUsage: (id, usage) =>
-    set((state) => {
-      const convId = state.currentConversationId
-      const newMsgs = state.messages.map((m) => (m.id === id ? { ...m, usage } : m))
-      const newMap = { ...state.messagesByConversationId, [convId]: newMsgs }
-      saveState({ conversations: state.conversations, currentConversationId: convId, messagesByConversationId: newMap })
-      return { messages: newMsgs, messagesByConversationId: newMap }
-    }),
+    addMessage: (msg) =>
+      set((state) => {
+        const convId = state.currentConversationId
+        const old = state.messagesByConversationId[convId] || []
+        const newMsgs = [...old, msg]
+        const newMap = { ...state.messagesByConversationId, [convId]: newMsgs }
+        const now = Date.now()
+        const newConversations = state.conversations.map((c) =>
+          c.id === convId
+            ? {
+                ...c,
+                title: c.title === "新对话" && msg.role === "user" ? generateTitleFromMessage(msg) : c.title,
+                updatedAt: now,
+              }
+            : c,
+        )
+        saveState({ conversations: newConversations, currentConversationId: convId, messagesByConversationId: newMap })
+        return { conversations: newConversations, messagesByConversationId: newMap, messages: newMsgs }
+      }),
+
+    updateMessage: (id, content) => updateMessageWith(id, () => ({ content })),
+
+    updateReasoning: (id, reasoningContent) => updateMessageWith(id, () => ({ reasoningContent })),
+
+    updateUsage: (id, usage) => updateMessageWith(id, () => ({ usage })),
 
   setLoading: (loading) => set({ loading }),
 
@@ -142,24 +137,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
       createdAt: Date.now(),
     }
     const assistantId = crypto.randomUUID()
+    const abortController = new AbortController()
 
     get().addMessage(userMsg)
     get().addMessage({ id: assistantId, role: "assistant", content: "", reasoningContent: "", createdAt: Date.now() })
 
-    set({ loading: true })
+    set({ loading: true, abortController })
     try {
       const finalContent = await requestAI({
         messages: [...previousMessages, userMsg],
         onContent: (c) => get().updateMessage(assistantId, c),
         onReasoning: (r) => get().updateReasoning(assistantId, r),
         onUsage: (u) => get().updateUsage(assistantId, u),
+        signal: abortController.signal,
       })
       get().updateMessage(assistantId, finalContent)
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "请求失败"
-      get().updateMessage(assistantId, msg)
+      if (error instanceof Error && error.name === "AbortError") {
+        get().updateMessage(assistantId, "已停止生成")
+      } else {
+        const msg = error instanceof Error ? error.message : "请求失败"
+        get().updateMessage(assistantId, msg)
+      }
     } finally {
-      set({ loading: false })
+      set({ loading: false, abortController: null })
+    }
+  },
+
+  stopGeneration: () => {
+    const state = get()
+    if (state.abortController) {
+      state.abortController.abort()
     }
   },
 

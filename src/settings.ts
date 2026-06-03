@@ -68,20 +68,20 @@ const DEFAULT_MODELS: ModelOption[] = [
   },
 ]
 
-function emitSettingsUpdated() {
+function emitSettingsUpdated(): void {
   window.dispatchEvent(new Event("cherry-settings-updated"))
 }
 
-function getString(key: string, fallback: string) {
+function getString(key: string, fallback: string): string {
   return localStorage.getItem(key) || fallback
 }
 
-function setString(key: string, value: string) {
+function setString(key: string, value: string): void {
   localStorage.setItem(key, value)
   emitSettingsUpdated()
 }
 
-function getNumber(key: string, fallback: number) {
+function getNumber(key: string, fallback: number): number {
   const value = localStorage.getItem(key)
 
   if (!value) return fallback
@@ -93,12 +93,12 @@ function getNumber(key: string, fallback: number) {
   return numberValue
 }
 
-function setNumber(key: string, value: number) {
+function setNumber(key: string, value: number): void {
   localStorage.setItem(key, String(value))
   emitSettingsUpdated()
 }
 
-function getBoolean(key: string, fallback: boolean) {
+function getBoolean(key: string, fallback: boolean): boolean {
   const value = localStorage.getItem(key)
 
   if (value === null) return fallback
@@ -106,7 +106,7 @@ function getBoolean(key: string, fallback: boolean) {
   return value === "true"
 }
 
-function setBoolean(key: string, value: boolean) {
+function setBoolean(key: string, value: boolean): void {
   localStorage.setItem(key, String(value))
   emitSettingsUpdated()
 }
