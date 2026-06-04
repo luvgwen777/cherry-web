@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react"
 import {
   Menu,
   Moon,
+  MoreHorizontal,
   MoreVertical,
   PenLine,
   Plus,
@@ -14,10 +15,8 @@ import {
   Download,
   LogOut,
   Copy,
-  MessageSquarePlus,
   Maximize2,
   Minimize2,
-  Sun,
   Info,
 } from "lucide-react"
 import { Button } from "./components/Button"
@@ -28,7 +27,7 @@ import { SkillsPanel } from "./components/SkillsPanel"
 import { MCPPanel } from "./components/MCPPanel"
 import { ModelSelector } from "./components/ModelSelector"
 import { useChatStore } from "./store"
-import { isAuthenticated, clearAuth, getAuthState, verifyCardKey, setAuthState } from "./auth"
+import { isAuthenticated, clearAuth, verifyCardKey, setAuthState } from "./auth"
 import type { ChatMessage, Conversation } from "./types"
 
 function formatTime(timestamp: number) {
@@ -67,7 +66,7 @@ function ConversationItem({
   onClick: () => void
   onRename: () => void
   onDelete: () => void
-  onExport: () => void
+  onExport?: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -104,7 +103,7 @@ function ConversationItem({
       </button>
 
       {menuOpen && (
-        <div className="absolute right-2 top-10 z-20 w-40 rounded-xl border border-[var(--color-border)] bg-[var(--color-popover)] p-1 shadow-md">
+        <div className="absolute right-2 top-10 z-20 w-32 rounded-xl border border-[var(--color-border)] bg-[var(--color-popover)] p-1 shadow-md">
           <button
             type="button"
             onClick={() => {
@@ -116,18 +115,20 @@ function ConversationItem({
             <PenLine size={14} />
             重命名
           </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setMenuOpen(false)
-              onExport()
-            }}
-            className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-sm hover:bg-[var(--color-accent)]"
-          >
-            <Download size={14} />
-            导出对话
-          </button>
+          
+          {onExport && (
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false)
+                onExport()
+              }}
+              className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-sm hover:bg-[var(--color-accent)]"
+            >
+              <Download size={14} />
+              导出
+            </button>
+          )}
 
           <button
             type="button"
@@ -155,7 +156,7 @@ function Sidebar({
   mobile?: boolean
   onClose?: () => void
   onOpenSkills: () => void
-  onExportConversation: (id: string) => void
+  onExportConversation?: (id: string) => void
 }) {
   const {
     conversations,
@@ -228,19 +229,16 @@ function Sidebar({
             }}
             onRename={() => {
               const title = window.prompt("新名称", conversation.title)
-
               if (title !== null) {
                 renameConversation(conversation.id, title)
               }
-            }}
-            onExport={() => {
-              onExportConversation(conversation.id)
             }}
             onDelete={() => {
               if (window.confirm(`删除「${conversation.title}」？`)) {
                 deleteConversation(conversation.id)
               }
             }}
+            onExport={onExportConversation ? () => onExportConversation(conversation.id) : undefined}
           />
         ))}
       </div>
@@ -311,12 +309,12 @@ export default function App() {
     })
   }
 
-  function exportConversation(conversationId: string) {
-    const conversation = conversations.find((c) => c.id === conversationId)
-    const convMessages = messagesByConversationId[conversationId] || []
-
+  function exportConversation(id: string) {
+    const conversation = conversations.find(c => c.id === id)
+    const convMessages = messagesByConversationId[id] || []
+    
     if (!conversation) return
-
+    
     const content = [
       `# ${conversation.title}`,
       ``,
@@ -324,16 +322,14 @@ export default function App() {
       ``,
       `---`,
       ``,
-      ...convMessages.map((msg) =>
-        [
-          `## ${msg.role === "user" ? "用户" : "AI"}`,
-          ``,
-          msg.content,
-          ``,
-        ].join("\n"),
-      ),
+      ...convMessages.map(msg => [
+        `## ${msg.role === "user" ? "用户" : "AI"}`,
+        ``,
+        msg.content,
+        ``,
+      ].join("\n")),
     ].join("\n")
-
+    
     const blob = new Blob([content], { type: "text/markdown" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
@@ -357,16 +353,14 @@ export default function App() {
   const filteredMessages = useMemo(() => {
     if (!searchQuery.trim()) return messages
     const query = searchQuery.toLowerCase()
-    return messages.filter((msg) =>
-      msg.content?.toLowerCase().includes(query),
-    )
+    return messages.filter(msg => msg.content?.toLowerCase().includes(query))
   }, [messages, searchQuery])
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
     setIsLoading(true)
-
+    
     setTimeout(() => {
       const trimmedKey = cardKey.trim().toUpperCase()
       
@@ -381,25 +375,20 @@ export default function App() {
     }, 800)
   }
 
-  const copyToClipboard = (key) => {
+  const copyToClipboard = (key: string) => {
     navigator.clipboard.writeText(key).catch(() => {})
   }
 
-  // 点击外部关闭菜单
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (
-        menuRef.current &&
-        !menuRef.current.contains(event.target as Node)
-      ) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setMenuOpen(false)
       }
     }
-
+    
     if (menuOpen) {
       document.addEventListener("mousedown", handleClickOutside)
-      return () =>
-        document.removeEventListener("mousedown", handleClickOutside)
+      return () => document.removeEventListener("mousedown", handleClickOutside)
     }
   }, [menuOpen])
 
@@ -410,7 +399,7 @@ export default function App() {
           <div className="rounded-2xl border border-white/20 bg-white/10 p-8 backdrop-blur-xl shadow-2xl">
             <div className="mb-8 text-center">
               <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-white/20">
-                <div className="h-10 w-10 text-white">🔐</div>
+                <span className="text-4xl">🍒</span>
               </div>
               <h1 className="text-3xl font-bold text-white">Cherry Web</h1>
               <p className="mt-2 text-white/80">
@@ -504,13 +493,15 @@ export default function App() {
     )
   }
 
+  const currentConversation = conversations.find(c => c.id === currentConversationId)
+
   return (
     <>
       <div className="flex h-[100dvh] overflow-hidden bg-[var(--color-background)] text-[var(--color-foreground)]">
         <div className="hidden lg:block">
-          <Sidebar
-            onOpenSkills={() => setSkillsOpen(true)}
-            onExportConversation={exportConversation}
+          <Sidebar 
+            onOpenSkills={() => setSkillsOpen(true)} 
+            onExportConversation={exportConversation} 
           />
         </div>
 
@@ -529,10 +520,7 @@ export default function App() {
 
                 <div className="hidden sm:block">
                   <h1 className="truncate text-sm font-medium">
-                    {
-                      conversations.find((c) => c.id === currentConversationId)
-                        ?.title || "新对话"
-                    }
+                    {currentConversation?.title || "新对话"}
                   </h1>
 
                   {loading && (
@@ -626,11 +614,7 @@ export default function App() {
                         }}
                         className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-[var(--color-accent)]"
                       >
-                        {isFullscreen ? (
-                          <Minimize2 size={16} />
-                        ) : (
-                          <Maximize2 size={16} />
-                        )}
+                        {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
                         {isFullscreen ? "退出全屏" : "全屏模式"}
                       </button>
 
@@ -718,9 +702,7 @@ export default function App() {
                   <MessageBubble
                     key={message.id}
                     message={message}
-                    onResend={
-                      message.role === "user" ? handleResend : undefined
-                    }
+                    onResend={message.role === "user" ? handleResend : undefined}
                   />
                 ))
               ) : searchQuery.trim() ? (
@@ -735,9 +717,7 @@ export default function App() {
                   <MessageBubble
                     key={message.id}
                     message={message}
-                    onResend={
-                      message.role === "user" ? handleResend : undefined
-                    }
+                    onResend={message.role === "user" ? handleResend : undefined}
                   />
                 ))
               ) : (
@@ -804,7 +784,6 @@ export default function App() {
 
       <MCPPanel open={mcpOpen} onClose={() => setMcpOpen(false)} />
 
-      {/* 关于对话框 */}
       {showAbout && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] p-6 shadow-xl">
@@ -821,8 +800,8 @@ export default function App() {
 
             <div className="space-y-4">
               <div className="text-center">
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600">
-                  <span className="text-2xl">🍒</span>
+                <div className="mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600">
+                  <span className="text-5xl">🍒</span>
                 </div>
                 <h3 className="text-lg font-semibold">Cherry Web</h3>
                 <p className="text-sm text-[var(--color-foreground-muted)]">
@@ -830,14 +809,14 @@ export default function App() {
                 </p>
               </div>
 
-              <div className="rounded-lg border border-[var(--color-border)] p-4 space-y-2">
+              <div className="rounded-xl border border-[var(--color-border)] p-4 space-y-2">
                 <div className="flex justify-between">
                   <span className="text-sm text-[var(--color-foreground-muted)]">版本</span>
                   <span className="text-sm font-medium">1.0.0</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-[var(--color-foreground-muted)]">更新日期</span>
-                  <span className="text-sm font-medium">2026-06-03</span>
+                  <span className="text-sm font-medium">2024-06-04</span>
                 </div>
               </div>
 
