@@ -730,7 +730,7 @@ export default function App() {
                     未找到匹配的消息
                   </p>
                 </div>
-              ) : (
+              ) : messages.length > 0 ? (
                 messages.map((message) => (
                   <MessageBubble
                     key={message.id}
@@ -740,6 +740,35 @@ export default function App() {
                     }
                   />
                 ))
+              ) : (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600">
+                    <span className="text-5xl">🍒</span>
+                  </div>
+                  <h2 className="mb-2 text-2xl font-bold text-[var(--color-foreground)]">
+                    欢迎使用 Cherry Web
+                  </h2>
+                  <p className="mb-8 max-w-md text-[var(--color-foreground-muted)]">
+                    智能对话助手，支持多模型对话、技能集成和 MCP 工具扩展。
+                    开始您的对话之旅吧！
+                  </p>
+                  <div className="grid w-full max-w-md grid-cols-2 gap-4 text-sm">
+                    <div className="rounded-xl border border-[var(--color-border)] p-4 text-left">
+                      <div className="mb-1 text-lg">✨</div>
+                      <p className="font-medium">智能技能</p>
+                      <p className="text-xs text-[var(--color-foreground-muted)]">
+                        集成多种实用技能
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[var(--color-border)] p-4 text-left">
+                      <div className="mb-1 text-lg">🔌</div>
+                      <p className="font-medium">MCP 工具</p>
+                      <p className="text-xs text-[var(--color-foreground-muted)]">
+                        扩展更多功能
+                      </p>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           </section>
