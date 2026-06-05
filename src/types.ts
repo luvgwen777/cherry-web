@@ -21,6 +21,7 @@ export interface ChatMessage {
   images?: ImageAttachment[]
   reasoningContent?: string
   usage?: TokenUsage
+  isStarred?: boolean
 }
 
 export interface Conversation {

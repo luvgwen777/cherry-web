@@ -1,5 +1,5 @@
-import { useRef, useState } from "react"
-import { ImagePlus, Send, Square, X } from "lucide-react"
+import { useRef, useState, useEffect } from "react"
+import { ImagePlus, Send, Square, X, Save } from "lucide-react"
 import { Button } from "./Button"
 import { fileToImageAttachment, useChatStore } from "../store"
 import type { ImageAttachment } from "../types"
@@ -8,11 +8,33 @@ import { ImagePreview } from "./ImagePreview"
 export function Composer() {
   const [text, setText] = useState("")
   const [images, setImages] = useState<ImageAttachment[]>([])
+  const [draftSaved, setDraftSaved] = useState(false)
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  const { loading, sendUserMessage, stopGeneration } = useChatStore()
+  const { loading, sendUserMessage, stopGeneration, getDraft, saveDraft } = useChatStore()
+
+  // 加载草稿
+  useEffect(() => {
+    const savedDraft = getDraft()
+    if (savedDraft && !text) {
+      setText(savedDraft)
+    }
+  }, [getDraft])
+
+  // 自动保存草稿 - 防抖
+  useEffect(() => {
+    if (!text.trim()) return
+    
+    const timer = setTimeout(() => {
+      saveDraft(text)
+      setDraftSaved(true)
+      setTimeout(() => setDraftSaved(false), 1500)
+    }, 800)
+
+    return () => clearTimeout(timer)
+  }, [text, saveDraft])
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -112,6 +134,14 @@ export function Composer() {
             }}
             className="max-h-40 min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-base leading-6 text-[var(--color-foreground)] outline-none placeholder:text-[var(--color-foreground-muted)] disabled:opacity-50"
           />
+
+          {/* 草稿保存状态 */}
+          {draftSaved && (
+            <div className="flex items-center gap-1 text-xs text-green-500 shrink-0">
+              <Save size={12} />
+              <span>已保存</span>
+            </div>
+          )}
 
           {loading ? (
             <Button

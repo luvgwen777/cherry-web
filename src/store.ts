@@ -3,6 +3,7 @@ import type { ChatMessage, Conversation, ImageAttachment, TokenUsage } from "./t
 import { requestAI } from "./ai"
 
 const STORAGE_KEY = "cherry-web-chat-state-v1"
+const DRAFT_KEY = "cherry-web-draft-v1"
 
 interface PersistedChatState {
   conversations: Conversation[]
@@ -22,6 +23,7 @@ interface ChatState {
   updateMessage: (id: string, content: string) => void
   updateReasoning: (id: string, reasoningContent: string) => void
   updateUsage: (id: string, usage: TokenUsage) => void
+  toggleStarMessage: (id: string) => void
   setLoading: (loading: boolean) => void
 
   sendUserMessage: (content: string, images?: ImageAttachment[]) => Promise<void>
@@ -31,6 +33,9 @@ interface ChatState {
   deleteConversation: (id: string) => void
   renameConversation: (id: string, title: string) => void
   clearMessages: () => void
+  saveDraft: (content: string) => void
+  getDraft: () => string
+  clearDraft: () => void
 }
 
 function createWelcomeMessage(content = "新的对话已开始。") {
@@ -122,7 +127,24 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     updateUsage: (id, usage) => updateMessageWith(id, () => ({ usage })),
 
+    toggleStarMessage: (id) => updateMessageWith(id, (msg) => ({ isStarred: !msg.isStarred })),
+
     setLoading: (loading) => set({ loading }),
+
+    saveDraft: (content) => {
+      const state = get()
+      localStorage.setItem(`${DRAFT_KEY}-${state.currentConversationId}`, content)
+    },
+
+    getDraft: () => {
+      const state = get()
+      return localStorage.getItem(`${DRAFT_KEY}-${state.currentConversationId}`) || ""
+    },
+
+    clearDraft: () => {
+      const state = get()
+      localStorage.removeItem(`${DRAFT_KEY}-${state.currentConversationId}`)
+    },
 
     sendUserMessage: async (content, images) => {
       const state = get()
@@ -141,6 +163,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
       get().addMessage(userMsg)
       get().addMessage({ id: assistantId, role: "assistant", content: "", reasoningContent: "", createdAt: Date.now() })
+      get().clearDraft()
 
       set({ loading: true, abortController })
       try {

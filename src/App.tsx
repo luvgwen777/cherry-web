@@ -259,6 +259,7 @@ export default function App() {
     conversations,
     messagesByConversationId,
     currentConversationId,
+    toggleStarMessage,
   } = useChatStore()
 
   const [isLoggedIn, setIsLoggedIn] = useState(isAuthenticated())
@@ -341,6 +342,10 @@ export default function App() {
 
   function handleResend(content: string) {
     sendUserMessage(content)
+  }
+
+  function handleStarMessage(id: string) {
+    toggleStarMessage(id)
   }
 
   function handleLogout() {
@@ -703,6 +708,7 @@ export default function App() {
                     key={message.id}
                     message={message}
                     onResend={message.role === "user" ? handleResend : undefined}
+                    onToggleStar={handleStarMessage}
                   />
                 ))
               ) : searchQuery.trim() ? (
@@ -718,6 +724,7 @@ export default function App() {
                     key={message.id}
                     message={message}
                     onResend={message.role === "user" ? handleResend : undefined}
+                    onToggleStar={handleStarMessage}
                   />
                 ))
               ) : (
